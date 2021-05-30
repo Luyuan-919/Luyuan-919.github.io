@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>My First Blog</title>
+    <url>/2021/05/28/My-First-Blog/</url>
+    <content><![CDATA[<p>Hello Hexo ！</p>
+]]></content>
+      <categories>
+        <category>Diary</category>
+        <category>Life</category>
+      </categories>
+      <tags>
+        <tag>golang</tag>
+      </tags>
+  </entry>
+</search>
