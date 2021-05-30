@@ -1,16 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title>My First Blog</title>
-    <url>/2021/05/28/My-First-Blog/</url>
-    <content><![CDATA[<p>Hello Hexo ！</p>
+    <title>Golang项目——纳新报名网站</title>
+    <url>/2021/05/29/Golang%E9%A1%B9%E7%9B%AE%E2%80%94%E2%80%94%E7%BA%B3%E6%96%B0%E6%8A%A5%E5%90%8D%E7%BD%91%E7%AB%99/</url>
+    <content><![CDATA[<h2 id="一个小项目"><a href="#一个小项目" class="headerlink" title="一个小项目~"></a>一个小项目~</h2><p>离准备面试的时间只剩下半年左右的时间了，而身为菜鸟的我还没有做拿得出手的项目。</p>
+<p>于是开始考虑该做点什么东西才能忽悠(bushi)面试官。</p>
+<p>想来想去，给实验室做个官网吧，当作自己的第一个项目。</p>
+<p>可是之前没有写过大型的网站，脑壳疼。</p>
+<p>那就先写个纳新报名的网站吧！实验室每年都纳新，实用性有了。后面把这玩意集成到官网里去，相当于官网完成一个部分了(摸鱼)。</p>
+<p>说干就干！</p>
+<p>然后……三天以后……完成了……</p>
+<p>嗯……简单的过分。</p>
+<p>正好又在周末摸鱼把个人博客搭起来了，那就在此记录一番。</p>
+<h2 id="项目技术栈"><a href="#项目技术栈" class="headerlink" title="项目技术栈"></a>项目技术栈</h2><p>web框架：gin</p>
+<p>数据库：mysql</p>
+<p>数据库交互：gorm</p>
+<p>接口文档：swaggo</p>
+<h2 id="项目架构"><a href="#项目架构" class="headerlink" title="项目架构"></a>项目架构</h2><p><img src="/2021/05/29/Golang%E9%A1%B9%E7%9B%AE%E2%80%94%E2%80%94%E7%BA%B3%E6%96%B0%E6%8A%A5%E5%90%8D%E7%BD%91%E7%AB%99/image-20210530180905611.png" alt="项目架构"></p>
+<p>db是数据库的初始化 以及建表的sql语句（gorm给生成的 orm真是懒狗偷懒的好帮手(好耶)）</p>
+<p>docs是swaggo生成接口文档的几个文件，有一说一这玩意是真的好用(同样是懒狗必备神器)，再也不用自己找前端页面自己改名字写js了。</p>
+<p>kcommon是一些公用的基础文件，例如缓存的初始化，jwt的生成与解析等都放在这里。(common前面加k是个人习惯，后面的几个包也是加了k的，正确的写法是不加k的)</p>
+<p>接下来的三个包就不用细说了~相信有mvc开发经验的小伙伴都能理解是干什么的</p>
+<p>log包是日志文件存放的地方，日志里会记录一下程序上的错误，例如数据库连接出错什么的。</p>
+<p>static是放前端页面的地方，然而这里什么都没放(因为没有前端~有swaggo就是可以为所欲为)</p>
+<p>然后的go.mod是版本的控制管理文件，不细说。</p>
+<p>main.go就是项目的入口啦。 </p>
+<h2 id="项目详细介绍"><a href="#项目详细介绍" class="headerlink" title="项目详细介绍"></a>项目详细介绍</h2><p>这个或许不应该叫项目特点，应该是在写之前就规划好的要写什么。</p>
+<p>但现在已经写完啦，所以就当成特点来写了。</p>
+<p>因为涉及到了实验室的报名(虽然最后也不一定用这个)，因此在代码展示上只会放一些controller层的代码和一些不重要的代码。(我本人是十分推崇开源的。)</p>
+<h3 id="main-go"><a href="#main-go" class="headerlink" title="main.go"></a>main.go</h3><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;SignUp/db&quot;</span></span><br><span class="line">	_ <span class="string">&quot;SignUp/docs&quot;</span></span><br><span class="line">	<span class="string">&quot;SignUp/kcommon&quot;</span></span><br><span class="line">	<span class="string">&quot;SignUp/kcontroller&quot;</span></span><br><span class="line">	<span class="string">&quot;go-Kirby-utils/klog&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	defAddr = <span class="string">&quot;:8080&quot;</span></span><br><span class="line">	ServiceStartError = <span class="string">&quot;服务未启动!&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">//控制台输出监听端口信息</span></span><br><span class="line">	klog.Info(<span class="string">&quot;Init Addr Of SignUp&quot;</span>,defAddr)</span><br><span class="line">	<span class="comment">//获取全局路由</span></span><br><span class="line">	r := kcontroller.GlobalRouter()</span><br><span class="line">	<span class="comment">//加载静态文件</span></span><br><span class="line">	kcontroller.GlobStatic(r)</span><br><span class="line">	<span class="comment">//开始监听端口</span></span><br><span class="line">	err := r.Run(defAddr)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		kcommon.GlobalLog.Fatalf(ServiceStartError)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">//log初始化</span></span><br><span class="line">	kcommon.InitKlog()</span><br><span class="line">	<span class="comment">//缓存初始化</span></span><br><span class="line">	kcommon.InitKcache()</span><br><span class="line">	<span class="comment">//数据库初始化</span></span><br><span class="line">	db.InitDb()</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>那个加载静态文件是初始化static那个包的，然鹅那个包没有东西……所以这个函数可以忽略它，后面如果放前端页面的话才会用到它。</p>
+<h3 id="学生端"><a href="#学生端" class="headerlink" title="学生端"></a>学生端</h3><p>首先来看报名的信息应该有哪些。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> Student <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID <span class="keyword">int</span> <span class="string">`json:&quot;id&quot;`</span></span><br><span class="line">	Name <span class="keyword">string</span> <span class="string">`json:&quot;name&quot;`</span></span><br><span class="line">	Email <span class="keyword">string</span> <span class="string">`json:&quot;email&quot;`</span></span><br><span class="line">	Phone <span class="keyword">string</span> <span class="string">`json:&quot;phone&quot;`</span></span><br><span class="line">	Numbers <span class="keyword">string</span> <span class="string">`json:&quot;numbers&quot;`</span></span><br><span class="line">	Class <span class="keyword">string</span> <span class="string">`json:&quot;class&quot;`</span></span><br><span class="line">	Status Status <span class="string">`json:&quot;status&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>而这里的Status是对int重命名，用来控制学生的报名状态。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> Status <span class="keyword">int</span></span><br></pre></td></tr></table></figure>
+
+<p>报名状态写成const和数组，以下标形式进行控制。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	SignUpSuccess Status = <span class="literal">iota</span> + <span class="number">1</span></span><br><span class="line">	FirstFail</span><br><span class="line">	FirstSuccess</span><br><span class="line">	SecondFail</span><br><span class="line">	SecondSuccess</span><br><span class="line">	ThirdFail</span><br><span class="line">	ThirdSuccess</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> (</span><br><span class="line">	StatusResult = [...]<span class="keyword">string</span>&#123;<span class="string">&quot;报名失败&quot;</span>,<span class="string">&quot;报名成功&quot;</span>, <span class="string">&quot;一面未通过&quot;</span>, <span class="string">&quot;一面通过&quot;</span>, <span class="string">&quot;二面未通过&quot;</span>, <span class="string">&quot;二面通过&quot;</span>,<span class="string">&quot;三面未通过&quot;</span>,<span class="string">&quot;三面通过&quot;</span>&#125;</span><br><span class="line">	StatusAll = [...]Status&#123;<span class="number">0</span>,SignUpSuccess,FirstFail,FirstSuccess,SecondFail,SecondSuccess,ThirdFail,ThirdSuccess&#125;</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>而学生结构体里设置了邮箱，手机号码和学号，这三项在数据库里是不可以重复的。</p>
+<h4 id="报名"><a href="#报名" class="headerlink" title="报名"></a>报名</h4><p>学生应当可以输入自己的信息进行报名。</p>
+<p>由前端进行数据的校验(正则)。</p>
+<p>后端会去数据库对比数据，当重要数据重复时会提示不可报名。</p>
+<p>如果报名成功的话，会将结构体里的Status直接设置为1，即报名成功。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SignUp</span><span class="params">(c *gin.Context)</span></span> &#123;</span><br><span class="line">	<span class="comment">//拿信息</span></span><br><span class="line">	phone := c.PostForm(<span class="string">&quot;Phone&quot;</span>)</span><br><span class="line">	Email := c.PostForm(<span class="string">&quot;Email&quot;</span>)</span><br><span class="line">	Nums := c.PostForm(<span class="string">&quot;Nums&quot;</span>)</span><br><span class="line">	<span class="comment">//将数据传到后面去进行对比，如果数据可用则放行。</span></span><br><span class="line">	<span class="keyword">if</span> ok, v := kservice.Check(phone, Email, Nums); !ok &#123;</span><br><span class="line">		WriteResp(c, Message, v)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">//拿到必要的信息</span></span><br><span class="line">	name := c.PostForm(<span class="string">&quot;Name&quot;</span>)</span><br><span class="line">	class := c.PostForm(<span class="string">&quot;Class&quot;</span>)</span><br><span class="line">	<span class="comment">//直接存</span></span><br><span class="line">	_, v := kservice.SaveStudent(name, phone, Email, Nums, class)</span><br><span class="line">	<span class="comment">//写回信息</span></span><br><span class="line">	WriteResp(c, Message, v)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的WriteResp实际上是对c.JSON()很简单的封装，为了方便自己而已。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WriteResp</span><span class="params">(c *gin.Context,name, msg <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	c.JSON(http.StatusOK,gin.H&#123;</span><br><span class="line">		name: msg,</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
 ]]></content>
       <categories>
-        <category>Diary</category>
-        <category>Life</category>
+        <category>golang</category>
+        <category>项目</category>
       </categories>
       <tags>
         <tag>golang</tag>
+        <tag>web</tag>
+        <tag>项目</tag>
       </tags>
   </entry>
 </search>
