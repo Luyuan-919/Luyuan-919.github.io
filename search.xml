@@ -146,4 +146,99 @@
         <tag>项目</tag>
       </tags>
   </entry>
+  <entry>
+    <title>go语言context超时控制的用法</title>
+    <url>/2021/05/30/go%E8%AF%AD%E8%A8%80context%E8%AF%A6%E8%A7%A3-%E7%94%A8%E6%B3%95/</url>
+    <content><![CDATA[<p>这篇博客来说一说go语言中的context的用法。</p>
+<p>这玩意曾经折磨了我一早上。</p>
+<p>(从各方面来讲都很离谱)</p>
+<span id="more"></span>
+
+<h2 id="context"><a href="#context" class="headerlink" title="context"></a>context</h2><p>首先来讲讲什么是context。</p>
+<p>暂且不提其在go中的定义，我们先来在csdn上搜搜看。</p>
+<p><img src="/2021/05/30/go%E8%AF%AD%E8%A8%80context%E8%AF%A6%E8%A7%A3-%E7%94%A8%E6%B3%95/go%E8%AF%AD%E8%A8%80context%E8%AF%A6%E8%A7%A3-%E7%94%A8%E6%B3%95%5Cimage-20210531193905221.png" alt="image-20210531193905221"></p>
+<p>可以看到的是，不止有go有这玩意。(妙啊)</p>
+<p>而context被很多人译为上下文。</p>
+<p>怎么样，听起来是不是很耳熟？</p>
+<p>“当发生进程的切换时，操作系统会保存上下文，即进程运行的必要信息，以待切换回来时恢复现场。”</p>
+<p>确实很熟悉。</p>
+<p>那么现在就明了了，这玩意就是一些参数，就是现场。</p>
+<p>一个函数想要执行，那它会需要一些必要的参数。</p>
+<p>进程想要恢复，它会拿保存下来的参数去恢复现场。</p>
+<p>你淘宝里想要清空购物车，它需要拿到你之前添加进购物车里的商品，什么东西，多少件，一件多少钱，这些都是参数。</p>
+<p>这就是context，它的概念不属于某种语言，而是归于编程这一个大类。</p>
+<h2 id="go语言中的context"><a href="#go语言中的context" class="headerlink" title="go语言中的context"></a>go语言中的context</h2><h3 id="概念"><a href="#概念" class="headerlink" title="概念"></a>概念</h3><p>那么context在go中有什么样的表现呢？</p>
+<p>“Package context defines the Context type, which carries deadlines, cancelation signals, and other request-scoped values across API boundaries and between processes.”</p>
+<p>这是go标准库里对context的定义。</p>
+<p>大意：context包定义了context结构，这个结构会在API和进程之间传递截至日期、取消信号和请求范围的值。</p>
+<p>人话：这就是个上下文，保存一堆参数，在函数或一堆goroutine之间传来传去进行控制。</p>
+<p>但是它也有其特点。</p>
+<p>普通的上下文只是保存了一些参数，而go里的context会为其最大的特性——goroutine而服务。</p>
+<p>这段说的特别好，在此引用：</p>
+<p>“在Go 里，我们不能直接杀死协程，协程的关闭一般会用channel+select方式来控制。但是在某些场景下，例如处理一个请求衍生了很多协程，这些协程之间是相互关联的：需要共享一些全局变量、有共同的deadline等，而且可以同时被关闭。再用channel+select就会比较麻烦，这时就可以通过context来实现。</p>
+<p>一句话：context用来解决 goroutine 之间退出通知、元数据传递的功能。”</p>
+<h3 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h3><p><a href="https://blog.csdn.net/u013474436/article/details/108410246?ops_request_misc=%7B%22request_id%22:%22162246005416780265474250%22,%22scm%22:%2220140713.130102334..%22%7D&request_id=162246005416780265474250&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~sobaiduend~default-1-108410246.first_rank_v2_pc_rank_v29&utm_term=go+context&spm=1018.2226.3001.4187">(11条消息) Go context详解_稻草人技术博客-CSDN博客</a></p>
+<p>看写好的博客就好了</p>
+<p>(本懒狗只会白嫖)</p>
+<h3 id="实例"><a href="#实例" class="headerlink" title="实例"></a>实例</h3><p>在看完数据结构、源码详解后，我大呼过瘾。</p>
+<p>但是一琢磨，用这玩意儿在项目里去定时，该怎么用呢？</p>
+<p>完蛋，上当了，看是看懂了，用是用废了。</p>
+<p>比如说，当用withTimeOut后，cancel()函数必须显示的调用吗？</p>
+<p>在接收ctx的函数里，一定要用select去接收吗？</p>
+<p>一个ctx可以一直传吗？</p>
+<p>满脑子问号。</p>
+<p>于是自己写了些测试的demo，去试试这玩意儿是怎么个用法。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">// 创建一个子节点的context,3秒后自动超时</span></span><br><span class="line">	ctx, _ := context.WithTimeout(context.Background(), time.Second*<span class="number">3</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> watch(ctx, <span class="string">&quot;监控1&quot;</span>)</span><br><span class="line">	<span class="keyword">go</span> watch(ctx, <span class="string">&quot;监控2&quot;</span>)</span><br><span class="line">	<span class="keyword">go</span> watch1(ctx, <span class="string">&quot;监控3&quot;</span>)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;现在开始等待8秒,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">	time.Sleep(<span class="number">6</span> * time.Second)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;main goroutine end, time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 单独的监控协程</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch</span><span class="params">(ctx context.Context, name <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;收到信号，监控退出,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;goroutine监控中,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch1</span><span class="params">(ctx context.Context, name <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;goroutine监控中,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">$ go run main.go</span><br><span class="line">现在开始等待6秒,time= 22:10:41</span><br><span class="line">监控2 goroutine监控中,time= 22:10:41</span><br><span class="line">监控1 goroutine监控中,time= 22:10:41</span><br><span class="line">监控3 goroutine监控中,time= 22:10:41</span><br><span class="line">监控3 goroutine监控中,time= 22:10:42</span><br><span class="line">监控2 goroutine监控中,time= 22:10:42</span><br><span class="line">监控1 goroutine监控中,time= 22:10:42</span><br><span class="line">监控2 goroutine监控中,time= 22:10:43</span><br><span class="line">监控3 goroutine监控中,time= 22:10:43</span><br><span class="line">监控1 goroutine监控中,time= 22:10:43</span><br><span class="line">监控3 goroutine监控中,time= 22:10:44</span><br><span class="line">监控2 收到信号，监控退出,time= 22:10:44</span><br><span class="line">监控1 收到信号，监控退出,time= 22:10:44</span><br><span class="line">监控3 goroutine监控中,time= 22:10:45</span><br><span class="line">监控3 goroutine监控中,time= 22:10:46</span><br><span class="line">main goroutine end, time= 22:10:47</span><br></pre></td></tr></table></figure>
+
+<p>通过这个demo，可以直观的看到其的一些特性。</p>
+<p>1.即使不接收WithTimeout的第二个返回值，用占位符代替，到时间也是会自动执行cancel()的。</p>
+<p>2.在接收ctx的函数里，一定要用select去接收。如果不接收，函数就会自顾自的跑下去，谁来了也不顶用。</p>
+<p>两个疑问解决了，那么第三个疑问呢？</p>
+<p>不要急，改一改demo就能得到结果。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;go-Kirby-utils/ktime&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">// 创建一个子节点的context,3秒后自动超时</span></span><br><span class="line">	ctx, _ := context.WithTimeout(context.Background(), time.Second*<span class="number">3</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> watch(ctx, <span class="string">&quot;监控1&quot;</span>)</span><br><span class="line">	<span class="keyword">go</span> watch1(ctx, <span class="string">&quot;监控2&quot;</span>)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;现在开始等待6秒,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">	time.Sleep(<span class="number">6</span> * time.Second)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;main goroutine end, time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 单独的监控协程</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch</span><span class="params">(ctx context.Context, name <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">go</span> watch2(ctx,<span class="string">&quot;监控3&quot;</span>)</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;收到信号，监控退出,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;goroutine监控中,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch1</span><span class="params">(ctx context.Context, name <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;goroutine监控中,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch2</span><span class="params">(ctx context.Context, name <span class="keyword">string</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;收到信号，监控退出,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println(name, <span class="string">&quot;goroutine监控中,time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出结果：</p>
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">$ go run main.go</span><br><span class="line">现在开始等待6秒,time= 22:15:03</span><br><span class="line">监控2 goroutine监控中,time= 22:15:03</span><br><span class="line">监控3 goroutine监控中,time= 22:15:03</span><br><span class="line">监控1 goroutine监控中,time= 22:15:03</span><br><span class="line">监控2 goroutine监控中,time= 22:15:04</span><br><span class="line">监控3 goroutine监控中,time= 22:15:04</span><br><span class="line">监控1 goroutine监控中,time= 22:15:04</span><br><span class="line">监控3 goroutine监控中,time= 22:15:05</span><br><span class="line">监控2 goroutine监控中,time= 22:15:05</span><br><span class="line">监控1 goroutine监控中,time= 22:15:05</span><br><span class="line">监控3 收到信号，监控退出,time= 22:15:06</span><br><span class="line">监控2 goroutine监控中,time= 22:15:06</span><br><span class="line">监控1 收到信号，监控退出,time= 22:15:06</span><br><span class="line">监控2 goroutine监控中,time= 22:15:07</span><br><span class="line">监控2 goroutine监控中,time= 22:15:08</span><br><span class="line">main goroutine end, time= 22:15:09</span><br></pre></td></tr></table></figure>
+
+<p>可以看出，传进watch的ctx又被传进了watch2，而在结果中，watch2确确实实是在发挥作用的。</p>
+<p>因此，我们的三个问题已经有答案了。</p>
+<p>Q:当用withTimeOut后，cancel()函数必须显示的调用吗？</p>
+<p>A:即使不接收WithTimeout的第二个返回值，用占位符代替，到时间也是会自动执行cancel()的。</p>
+<p>Q：在接收ctx的函数里，一定要用select去接收吗？</p>
+<p>A:在接收ctx的函数里，一定要用select去接收。如果不接收，函数就会自顾自的跑下去，谁来了也不顶用。</p>
+<p>Q：一个ctx可以一直传吗？</p>
+<p>A:可以用。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>因此，我们可以总结一下context实现超时控制。</p>
+<p>1.首先，应该调用withTimeOut方法获取ctx，cancel函数可以选择用占位符接收；</p>
+<p>2.在接收ctx的函数中，想要不浪费资源，则要实现select去接收ctx.Done()；</p>
+<p>3.使用select的话，就要善用goroutine和channel，普通的函数接收返回值是不行的。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ctx, _ := context.WithTimeout(context.Background(), time.Second*<span class="number">3</span>)</span><br><span class="line">	test(ctx)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">test</span><span class="params">(ctx context.Context)</span></span> &#123;</span><br><span class="line">	<span class="comment">//do something 这里使用sleep来模拟</span></span><br><span class="line">	<span class="comment">//假定需要5秒去执行</span></span><br><span class="line">	time.Sleep(<span class="number">5</span> * time.Second)</span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;- ctx.Done():</span><br><span class="line">		fmt.Println(<span class="string">&quot;test end!&quot;</span>)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	<span class="keyword">default</span>:</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这样的写法就毫无意义。</p>
+<p>只有当select之前的代码执行结束后，select才会执行。</p>
+<p>如果把select放在前面，则又会阻塞后续代码的执行。</p>
+<p>因此，应当是使用goroutine把要执行的代码放进一个协程去做，而这个函数只要等待就好了。</p>
+<p>就像这样：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ctx, _ := context.WithTimeout(context.Background(), time.Second*<span class="number">3</span>)</span><br><span class="line">	test(ctx)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">test</span><span class="params">(ctx context.Context)</span></span> &#123;</span><br><span class="line">	<span class="comment">//do something 这里使用go doSomething来模拟 假定需要5秒执行时间</span></span><br><span class="line">	<span class="keyword">go</span> doSomething()</span><br><span class="line">	<span class="keyword">for</span>  &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;- ctx.Done():</span><br><span class="line">			fmt.Println(<span class="string">&quot;test end!&quot;</span>)</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			fmt.Println( <span class="string">&quot;time=&quot;</span>, ktime.GetNowTimeStr())</span><br><span class="line">			time.Sleep(<span class="number">1</span> * time.Second)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>结果：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">$ <span class="keyword">go</span> run main.<span class="keyword">go</span></span><br><span class="line">time= <span class="number">22</span>:<span class="number">44</span>:<span class="number">18</span></span><br><span class="line">time= <span class="number">22</span>:<span class="number">44</span>:<span class="number">19</span></span><br><span class="line">time= <span class="number">22</span>:<span class="number">44</span>:<span class="number">20</span></span><br><span class="line">time= <span class="number">22</span>:<span class="number">44</span>:<span class="number">21</span></span><br><span class="line">test end!</span><br></pre></td></tr></table></figure>
+
+<p>模拟doSomething需要5秒执行结束，而程序三秒后就退出了，证明有效。</p>
+<p>因此，context应该搭配goroutine使用。</p>
+<p>至于函数的返回值，给函数传一个管道，然后让函数执行结束之后往管道里塞数据就可以啦。</p>
+<h2 id="结束"><a href="#结束" class="headerlink" title="结束"></a>结束</h2><p>关于context控制超时的分享就到这里啦~</p>
+<p>希望对你有所帮助。</p>
+<p>如果发现我的文章里有错的地方，请不吝赐教，通过QQ:1582086492与我联系！</p>
+]]></content>
+      <categories>
+        <category>golang</category>
+      </categories>
+      <tags>
+        <tag>golang，context</tag>
+      </tags>
+  </entry>
 </search>
