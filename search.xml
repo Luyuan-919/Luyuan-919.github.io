@@ -241,4 +241,94 @@
         <tag>context</tag>
       </tags>
   </entry>
+  <entry>
+    <title>让你的项目高档起来——添加邮箱验证码功能</title>
+    <url>/2021/06/03/%E8%AE%A9%E4%BD%A0%E7%9A%84%E9%A1%B9%E7%9B%AE%E9%AB%98%E6%A1%A3%E8%B5%B7%E6%9D%A5%E2%80%94%E2%80%94%E6%B7%BB%E5%8A%A0%E9%82%AE%E7%AE%B1%E9%AA%8C%E8%AF%81%E7%A0%81%E5%8A%9F%E8%83%BD/</url>
+    <content><![CDATA[<p>在做项目的时候，如果你想把项目做的高档一点，那么在注册的时候发送一个验证码是必不可少的。</p>
+<p>短信验证码是要收费的，给钱是不可能给钱的，只能靠白嫖才能维持的了生活这亚子(bushi)。</p>
+<p>那就使用邮箱发送验证码吧。</p>
+<p>本文来介绍一下如何在你的go项目中添加这个功能或完善这个功能。</p>
+<span id="more"></span>
+
+<h2 id="前置知识"><a href="#前置知识" class="headerlink" title="前置知识"></a>前置知识</h2><p>本文默认你对smtp协议有所了解。</p>
+<p>本文的邮箱发送基于gomail这个包。</p>
+<h2 id="配置邮箱"><a href="#配置邮箱" class="headerlink" title="配置邮箱"></a>配置邮箱</h2><p>因为不是企业邮箱，我们个人做的话，不会像在公司一样，有其他人把这个事情做好，你只要调api就好了。</p>
+<p>但是问题不大，自己动手，丰衣足食。</p>
+<p>这里介绍两种配置方法。</p>
+<h3 id="qq邮箱"><a href="#qq邮箱" class="headerlink" title="qq邮箱"></a>qq邮箱</h3><p><a href="https://blog.csdn.net/ifubing/article/details/104499005?ops_request_misc=&request_id=&biz_id=102&utm_term=stmp">开通qq邮箱的smtp服务的流程详情_pyhui的技术博客-CSDN博客</a></p>
+<p>使用qq邮箱的限制会比较大，不能连续发还是怎么滴，总之自己玩玩还可以，用在不会落地的项目里也可以，千万别用在上线的项目里。</p>
+<h3 id="阿里云"><a href="#阿里云" class="headerlink" title="阿里云"></a>阿里云</h3><p>这种方法需要你有一个域名而且对域名备案。</p>
+<p>好处是没有那么多限制。</p>
+<p>而且每天有200封免费邮件的额度(白嫖怪狂喜)</p>
+<p>还可以监控追踪邮件发送情况。</p>
+<p><a href="https://blog.csdn.net/u014633966/article/details/87877846">利用阿里云邮件推送免费发邮件，每天免费200封，速度快，还高大上_潜心修炼–记录点滴-CSDN博客_邮件推送</a></p>
+<h2 id="代码"><a href="#代码" class="headerlink" title="代码"></a>代码</h2><p>邮箱配置完成后，我们会拥有一个发信邮箱和密码，将这个记下来。</p>
+<p>首先是结构体</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> EmailConfig <span class="keyword">struct</span> &#123;</span><br><span class="line">	Host        <span class="keyword">string</span> <span class="string">`json:&quot;host&quot; yaml:&quot;host&quot;`</span></span><br><span class="line">	Port        <span class="keyword">int</span>    <span class="string">`json:&quot;port&quot; yaml:&quot;port&quot;`</span></span><br><span class="line">	Email       <span class="keyword">string</span> <span class="string">`json:&quot;kemail&quot; yaml:&quot;kemail&quot;`</span></span><br><span class="line">	Pwd         <span class="keyword">string</span> <span class="string">`json:&quot;pwd&quot; yaml:&quot;pwd&quot;`</span></span><br><span class="line">	ServerName  <span class="keyword">string</span> <span class="string">`json:&quot;serverName&quot; yaml:&quot;serverName&quot;`</span></span><br><span class="line">	ContentType <span class="keyword">string</span> <span class="string">`json:&quot;contentType&quot; yaml:&quot;contentType&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> EmailClient <span class="keyword">struct</span> &#123;</span><br><span class="line">	cfg    *EmailConfig</span><br><span class="line">	helper *gomail.Dialer</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>一个是邮箱的配置信息，一个是EmailClient，用来发信。</p>
+<p>然后是初始化配置信息结构体：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewEmailConfig</span><span class="params">(Host, Email, Pwd <span class="keyword">string</span>, Port <span class="keyword">int</span>)</span> <span class="params">(cfg *EmailConfig)</span></span> &#123;</span><br><span class="line">	email :=  EmailConfig&#123;</span><br><span class="line">		Host: Host,</span><br><span class="line">		Port: Port,</span><br><span class="line">		Email: Email,</span><br><span class="line">		Pwd: Pwd,</span><br><span class="line">		ServerName: <span class="string">&quot;&quot;</span>,</span><br><span class="line">		ContentType: <span class="string">&quot;&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> &amp;email</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>代码也没有什么好讲的，把配置信息塞进去就行了。</p>
+<p>Host填邮箱服务对应的host，例如阿里云就是smtpdm.aliyun.com</p>
+<p>而Port同理，按照服务厂商给的端口填写。</p>
+<p>开启客户端：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">var</span> NewEmailClient = <span class="function"><span class="keyword">func</span><span class="params">(cfg *EmailConfig)</span> *<span class="title">EmailClient</span></span> &#123;</span><br><span class="line">   <span class="keyword">if</span> cfg.ServerName == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      cfg.ServerName = defServerName</span><br><span class="line">   &#125; <span class="keyword">else</span> <span class="keyword">if</span> cfg.ContentType == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      cfg.ContentType = sendBody</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> &amp;EmailClient&#123;</span><br><span class="line">      cfg:    cfg,</span><br><span class="line">      helper: gomail.NewDialer(cfg.Host, cfg.Port, cfg.Email, cfg.Pwd),</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的一些consts：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">fromName    = <span class="string">&quot;From&quot;</span></span><br><span class="line">sendTo      = <span class="string">&quot;To&quot;</span></span><br><span class="line">sendSubject = <span class="string">&quot;subject&quot;</span></span><br><span class="line">sendBody    = <span class="string">&quot;text/html&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>defServeName按照自己的喜好填写即可。</p>
+<p>在获得一个客户端后，我们就可以开始写发信方法了。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(es *EmailClient)</span> <span class="title">newMessage</span><span class="params">(subject, body <span class="keyword">string</span>, mailTo ...<span class="keyword">string</span>)</span> *<span class="title">gomail</span>.<span class="title">Message</span></span> &#123;</span><br><span class="line">   message := gomail.NewMessage()</span><br><span class="line">   message.SetHeader(fromName, es.cfg.Email, es.cfg.ServerName)</span><br><span class="line">   message.SetHeader(sendTo, mailTo...)</span><br><span class="line">   message.SetHeader(sendSubject, subject)</span><br><span class="line">   message.SetBody(sendBody, body)</span><br><span class="line">   <span class="keyword">return</span> message</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(es *EmailClient)</span> <span class="title">SendEmail</span><span class="params">(subject, body <span class="keyword">string</span>, mailTo ...<span class="keyword">string</span>)</span> <span class="title">error</span></span> &#123;</span><br><span class="line">   err := es.helper.DialAndSend(es.newMessage(subject, body, mailTo...))</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>需要发信，直接调用SendEmail即可。参数是 标题、邮件主体、收信邮箱。</p>
+<p>代码也十分易于理解。</p>
+<p>至此，顺利的话，收信邮箱已经躺好了一封邮件等你接收~</p>
+<p>如果对此有疑问的话，可以移步这里：<a href="https://github.com/Luyuan-919/go-kirby-utils">Luyuan-919/go-kirby-utils (github.com)</a></p>
+<p>在这个开源的库里，有我已经封装好的一系列工具，刚才介绍的代码都在其中的kemail里。</p>
+<h2 id="应用"><a href="#应用" class="headerlink" title="应用"></a>应用</h2><p>说完了基本的发信demo，就可以将其应用在自己的项目中了。</p>
+<p>首先我们来看看需求：</p>
+<p>我们需要在有需要的时候将邮件发送至指定的邮箱，邮件里需要包含我们给出的验证码，用户在拿到验证码之后会使用这个验证码进行注册或修改密码等服务。</p>
+<p>验证码不可能发出去就一直可以用，因此我们需要设置过期时间，这个时间一般是五分钟。</p>
+<p>在用户验证完验证码后，我们要对验证码进行删除。</p>
+<p>为了防止用户发送完验证码后不使用，过期的验证码堆积在我们的内存里，我们还需要定时清除过期的验证码。</p>
+<p>ok，基本需求就是这些，来写代码即可。</p>
+<h3 id="准备工作"><a href="#准备工作" class="headerlink" title="准备工作"></a>准备工作</h3><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> EmailCodeType <span class="keyword">struct</span> &#123;</span><br><span class="line">   Code <span class="keyword">string</span></span><br><span class="line">   Time time.Time</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> (</span><br><span class="line">   Email *kemail.EmailClient</span><br><span class="line">   EmailTicker *time.Ticker</span><br><span class="line">   DefTickerTime = <span class="number">12</span> * time.Hour</span><br><span class="line">   Mu sync.Mutex</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> (</span><br><span class="line">   EmailCode = <span class="keyword">map</span>[<span class="keyword">string</span>]EmailCodeType&#123;&#125;</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">InitEmail</span><span class="params">()</span></span> &#123;</span><br><span class="line">   cfg := config.GlobalCfg()</span><br><span class="line">   emailCfg := cfg.EmailConfig</span><br><span class="line">   c := kemail.NewEmailConfig(emailCfg.Host,emailCfg.Email,emailCfg.Pwd,emailCfg.Port)</span><br><span class="line">   Email = kemail.NewEmailClient(c)</span><br><span class="line">   EmailTicker = time.NewTicker(DefTickerTime)</span><br><span class="line">   <span class="keyword">go</span> EmailCodeClean()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>我们选择map来储存验证码。</p>
+<p>在项目里Init一个发信客户端。</p>
+<p>通过配置文件(yaml)的方式填写邮箱的配置信息。</p>
+<h3 id="发信"><a href="#发信" class="headerlink" title="发信"></a>发信</h3><p>当用户选择需要发送验证码服务的时候，我们先得产生一个验证码。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SendCode</span><span class="params">(email <span class="keyword">string</span>)</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="comment">//如果该邮箱已经在map里且时间未过期 则返回false 不予发送</span></span><br><span class="line">	<span class="keyword">if</span> _, ok := common.EmailCode[email]; ok &#123;</span><br><span class="line">		<span class="keyword">if</span> time.Since(common.EmailCode[email].Time) &lt; DefExpireTime &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">//定义结构体</span></span><br><span class="line">	<span class="keyword">var</span> c common.EmailCodeType</span><br><span class="line">	<span class="comment">//获取验证码</span></span><br><span class="line">	c.Code = GetVerificationCode()</span><br><span class="line">	<span class="comment">//时间设置为当前时间</span></span><br><span class="line">	c.Time = time.Now()</span><br><span class="line">	<span class="comment">//在map里存下</span></span><br><span class="line">	common.EmailCode[email] = c</span><br><span class="line">	<span class="comment">//调用方法,发信</span></span><br><span class="line">	err := common.Email.SendEmail(Code,GetBody(c.Code),email)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		common.GlobalLog.Infof(err)</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//获取邮件内容</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetBody</span><span class="params">(code <span class="keyword">string</span>)</span> <span class="title">string</span></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> fmt.Sprintf(common.EmailHtmlFmt,Code,config.GlobalCfg().ServerName,code)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">//获取一个验证码 验证码长度设置为6位</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetVerificationCode</span><span class="params">()</span> <span class="title">string</span></span>  &#123;</span><br><span class="line">	<span class="keyword">return</span> krandom.CreateRandomNumber(<span class="number">6</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那个common.EmailHtmlFmt是自定义的邮件模板，其实就是写好的html，网上有很多，搜索邮件html模板即可。</p>
+<p>这里说一下这个获取验证码的方法，它也在我开源的那个工具包里。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CreateRandomNumber</span><span class="params">(<span class="built_in">len</span> <span class="keyword">int</span>)</span>  <span class="title">string</span></span>&#123;</span><br><span class="line">	<span class="keyword">var</span> numbers = []<span class="keyword">byte</span>&#123;<span class="number">0</span>,<span class="number">1</span>,<span class="number">2</span>,<span class="number">3</span>,<span class="number">4</span>,<span class="number">5</span>,<span class="number">6</span>,<span class="number">7</span>,<span class="number">8</span>,<span class="number">9</span>&#125;</span><br><span class="line">	<span class="keyword">var</span> container <span class="keyword">string</span></span><br><span class="line">	length := bytes.NewReader(numbers).Len()</span><br><span class="line">	x := big.NewInt(<span class="keyword">int64</span>(length))</span><br><span class="line">	<span class="keyword">for</span> i:=<span class="number">1</span>;i&lt;=<span class="built_in">len</span>;i++&#123;</span><br><span class="line">		random,_ := rand.Int(rand.Reader,x)</span><br><span class="line">		container += fmt.Sprintf(<span class="string">&quot;%d&quot;</span>,numbers[random.Int64()])</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> container</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个产生的随机数是随机程度比较高的。</p>
+<p>到这一步，我们的邮件就已经发送到了收信者的邮箱里了。</p>
+<h3 id="处理验证码"><a href="#处理验证码" class="headerlink" title="处理验证码"></a>处理验证码</h3><p>当用户收到验证码后，我们要做的是校验验证码。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">//当发来的验证码和本地存的验证码不一样 会返回验证码错误的数据.</span></span><br><span class="line">	<span class="keyword">if</span> common.EmailCode[email].Code != code&#123;</span><br><span class="line">		WriteJsonCode(c,Code,CodeNotMatch)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">//如果发来的时间已经超过设置的超时时间,那么返回超时错误.</span></span><br><span class="line">	<span class="keyword">if</span> time.Since(common.EmailCode[email].Time) &gt; DefExpiredTime &#123;</span><br><span class="line">		WriteJsonCode(c,Code,CodeTimeOut)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	GlobalMu.Lock()</span><br><span class="line">	<span class="comment">//验证成功 在map里删除此验证码</span></span><br><span class="line">	<span class="built_in">delete</span>(common.EmailCode,email)</span><br><span class="line">	GlobalMu.Unlock()</span><br><span class="line">	do....</span><br></pre></td></tr></table></figure>
+
+<p>通过这套流程 即可校验验证码。</p>
+<h3 id="处理过期验证码"><a href="#处理过期验证码" class="headerlink" title="处理过期验证码"></a>处理过期验证码</h3><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">EmailCodeClean</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span>  &#123;</span><br><span class="line">		&lt;- EmailTicker.C</span><br><span class="line">		<span class="keyword">for</span> k,v := <span class="keyword">range</span> EmailCode&#123;</span><br><span class="line">			<span class="keyword">if</span> time.Since(v.Time) &gt; time.Minute*<span class="number">5</span> &#123;</span><br><span class="line">				Mu.Lock()</span><br><span class="line">				<span class="built_in">delete</span>(EmailCode,k)</span><br><span class="line">				Mu.Unlock()</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>我们开启一个ticker定时清除过期的验证码即可。</p>
+<p>因为我这个项目做出来后，可想而知的用户量不会太大，因此我就放心的把清理时间设置为12小时清理一次。</p>
+<p>如果你的项目有可能会一天的发信量突破200而你又不想花钱，那还可以写一个中间件，统计发信的次数，当一天的发信量到一定量时，停止服务。</p>
+<h2 id="结束"><a href="#结束" class="headerlink" title="结束"></a>结束</h2><p>以上就是如何在你的项目里加上验证码功能。</p>
+<p>如果你有疑问或者见解，都可以加我的qq讨论。</p>
+<p>感谢你能看到这里，希望对你有所帮助~</p>
+]]></content>
+      <categories>
+        <category>golang</category>
+        <category>项目</category>
+      </categories>
+      <tags>
+        <tag>golang</tag>
+        <tag>验证码功能</tag>
+      </tags>
+  </entry>
 </search>
