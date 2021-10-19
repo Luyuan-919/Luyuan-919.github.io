@@ -1,6 +1,94 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>GoLang垃圾回收迭代分析</title>
+    <url>/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<p>这篇文章总结一下go垃圾回收机制及go版本演变中垃圾回收的变化。</p>
+<span id="more"></span>
+
+
+
+<h1 id="GoLang垃圾回收分析"><a href="#GoLang垃圾回收分析" class="headerlink" title="GoLang垃圾回收分析"></a>GoLang垃圾回收分析</h1><p>这篇对于GC讲的很详细了：<a href="https://www.bookstack.cn/read/aceld-golang/5%E3%80%81Golang%E4%B8%89%E8%89%B2%E6%A0%87%E8%AE%B0+%E6%B7%B7%E5%90%88%E5%86%99%E5%B1%8F%E9%9A%9CGC%E6%A8%A1%E5%BC%8F%E5%85%A8%E5%88%86%E6%9E%90.md">第一篇：Golang修养必经之路 - 5、Golang三色标记+混合写屏障GC模式全分析 - 《Golang 修养之路》 - 书栈网 · BookStack</a></p>
+<p>看完后需要自己记住的知识点：</p>
+<h2 id="一、定义"><a href="#一、定义" class="headerlink" title="一、定义"></a>一、定义</h2><p>垃圾回收（Garbage Collection）是编程语言提供的自动管理内存的机制，自动释放不需要的对象，让出存储器资源，程序员无序关注无用对象的回收。</p>
+<p><em><strong>自动管理内存，回收不需要的对象的机制</strong></em></p>
+<h2 id="二、STW"><a href="#二、STW" class="headerlink" title="二、STW"></a>二、STW</h2><p>stop the world</p>
+<p>指触发gc时需要暂停整个程序</p>
+<h2 id="三、GC发展流程"><a href="#三、GC发展流程" class="headerlink" title="三、GC发展流程"></a>三、GC发展流程</h2><h3 id="1-v1-3及以前的标记清除算法"><a href="#1-v1-3及以前的标记清除算法" class="headerlink" title="1.v1.3及以前的标记清除算法"></a>1.v1.3及以前的标记清除算法</h3><p>stw-&gt;扫描-&gt;标记可达对象-&gt;清除不可达对象-&gt;恢复程序运行</p>
+<p>缺点：</p>
+<p>1）需要stw，造成程序的暂停</p>
+<p>2）需要扫描整个heap</p>
+<p>3）清除数据后会出现heap碎片</p>
+<p>v1.3版本先恢复程序的运行再进行不可达对象的清理，减少stw时间。</p>
+<h3 id="2-v1-5的三色标记法"><a href="#2-v1-5的三色标记法" class="headerlink" title="2.v1.5的三色标记法"></a>2.v1.5的三色标记法</h3><p>算法流程：</p>
+<p>1）新创建的对象，就默认标记为“白色”</p>
+<p>2）GC开始，从根节点开始遍历所有对象，所有可达的对象变为灰色</p>
+<p>3）遍历灰色对象，把所有灰色对象的引用从白色变为黑色，然后把此次的灰色对象变为黑色</p>
+<p>4）重复第三步，直到所有灰色对象没有可以引用的白色对象为止；此时所有灰色也都变为了黑色</p>
+<p>5）回收所有的白色对象，此时的白色对象都是不可达的垃圾。</p>
+<p>此流程一定要依赖于stw，如果不暂停程序，GC的过程中如果有程序的逻辑改变了对象之间的引用逻辑，那么会影响标记的正确性，可能会导致被引用的对象被回收了。</p>
+<p>通过一个例子举例没有stw带来的问题：</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/1.png" alt="image-20211018214641717"></p>
+<p>现在对象四已经引用了对象7，对象一引用了对象二</p>
+<p>此时，如果还没有扫描到对象二的时候（对象三来不及变为灰色）时，对象四对对象3进行了引用</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/2.png" alt="image-20211018215455657"></p>
+<p>此时的黑色（对象四）就会引用一个白色对象（对象3）</p>
+<p>而此时的对象四已经被扫描过了，因此不会被再次扫描，也就是说，对象3没有变为灰色的机会了。</p>
+<p>因此，在清理阶段，正常被引用的对象3，就会被误清理掉。</p>
+<h3 id="3-对象丢失"><a href="#3-对象丢失" class="headerlink" title="3.对象丢失"></a>3.对象丢失</h3><p>通过上面的例子可以总结：</p>
+<p>1）一个白色对象被黑色对象引用</p>
+<p>2）一个灰色对象与它可达的白色对象之间的关系遭到破坏</p>
+<p>满足上述一二条件时，就会发生对象丢失的情况。</p>
+<p>为了解决对象丢失的问题，最简单的方式就是stw。</p>
+<h3 id="4-屏障机制"><a href="#4-屏障机制" class="headerlink" title="4.屏障机制"></a>4.屏障机制</h3><p>为了不发生对象丢失，就需要破坏发生对象丢失的两个条件。</p>
+<h4 id="1-gt-强弱三色不变式"><a href="#1-gt-强弱三色不变式" class="headerlink" title="1&gt;强弱三色不变式"></a>1&gt;强弱三色不变式</h4><h5 id="强三色不变式"><a href="#强三色不变式" class="headerlink" title="强三色不变式"></a>强三色不变式</h5><p>不存在黑色引用白色的指针</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/3.png" alt="image-20211018220410859"></p>
+<h5 id="弱三色不变式"><a href="#弱三色不变式" class="headerlink" title="弱三色不变式"></a>弱三色不变式</h5><p>把被黑色引用的白色保护起来</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/4.png" alt="image-20211018220521130"></p>
+<p>这样可以保证此白色对象有机会变为灰色。</p>
+<h4 id="2-gt-插入屏障"><a href="#2-gt-插入屏障" class="headerlink" title="2&gt;插入屏障"></a>2&gt;插入屏障</h4><p>具体操作：当A引用B，B必定标记为灰色</p>
+<p>满足了强三色不变式，保证了黑色引用的都是灰色对象。</p>
+<figure class="highlight gml"><table><tr><td class="code"><pre><span class="line">添加下游对象(当前下游对象slot,新下游对象<span class="built_in">ptr</span>)&#123;</span><br><span class="line"><span class="comment">//1</span></span><br><span class="line">标记灰色(新下游对象<span class="built_in">ptr</span>)</span><br><span class="line"><span class="comment">//2</span></span><br><span class="line">当前下游对象slot =新下游对象<span class="built_in">ptr</span>                    </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/5.png" alt="image-20211018220941304"></p>
+<p>因为要求速度快，对栈的性能有要求，因此栈空间的对象不使用插入屏障。</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/6.png" alt="image-20211019180724880"></p>
+<p>在将白色对象引用到黑色对象时（堆上），会触发写屏障，将白色对象（对象8）变为灰色对象。</p>
+<p>因为栈不适用插入屏障，因此在准备回收白色对象的时候要对栈进行重新扫描。</p>
+<h4 id="3-gt-删除屏障"><a href="#3-gt-删除屏障" class="headerlink" title="3&gt;删除屏障"></a>3&gt;删除屏障</h4><p>被删除的对象，如果自身为灰色或者白色，则被标记为灰色。</p>
+<p>这样可以保证当白色被引用对象的引用被断开的时候，自身会变为灰色，从而避免对象丢失。</p>
+<figure class="highlight awk"><table><tr><td class="code"><pre><span class="line">添加下游对象(当前下游对象slot，新下游对象ptr)&#123;</span><br><span class="line"><span class="regexp">//</span><span class="number">1</span></span><br><span class="line"><span class="keyword">if</span>(当前下游对象slot是灰色||当前下游对象slot是白色)&#123;</span><br><span class="line">标记灰色(当前下游对象slot)<span class="regexp">//</span>slot为被删除对象， 标记为灰色</span><br><span class="line">&#125;</span><br><span class="line"><span class="regexp">//</span><span class="number">2</span></span><br><span class="line">当前下游对象slot =新下游对象ptr</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/7.png" alt="image-20211019194722232"></p>
+<p>缺点：回收精度低，会把所有引用被断开的白色对象变为灰色（有可能让一些无用对象多活过一轮）。</p>
+<h3 id="v1-8的混合写屏障机制"><a href="#v1-8的混合写屏障机制" class="headerlink" title="v1.8的混合写屏障机制"></a>v1.8的混合写屏障机制</h3><p>写屏障和删除屏障的缺点：</p>
+<p>写屏障：</p>
+<p>需要对栈进行stw；</p>
+<p>插入屏障：</p>
+<p>回收精度低</p>
+<h4 id="1-gt-混合写屏障规则"><a href="#1-gt-混合写屏障规则" class="headerlink" title="1&gt;混合写屏障规则"></a>1&gt;混合写屏障规则</h4><p>1.GC开始后，会将栈上所有对象都标记为黑色，无需重新扫描和stw</p>
+<p>2.GC开始后，栈上创建的对象均为黑色；</p>
+<p>3.被删除引用的对象都标记为灰色；</p>
+<p>4.被添加引用的对象都标记为灰色；</p>
+<figure class="highlight awk"><table><tr><td class="code"><pre><span class="line"><span class="regexp">//</span>添加的 与 删除的 都标记为 灰色</span><br><span class="line"></span><br><span class="line">添加下游对象(当前下游对象slot,新下游对象ptr)&#123;</span><br><span class="line"><span class="regexp">//</span><span class="number">1</span> </span><br><span class="line">标记灰色(当前下游对象slot)<span class="regexp">//</span>只要当前下游对象被移走，就标记灰色</span><br><span class="line"><span class="regexp">//</span><span class="number">2</span> </span><br><span class="line">标记灰色(新下游对象ptr)</span><br><span class="line"><span class="regexp">//</span><span class="number">3</span></span><br><span class="line">当前下游对象slot =新下游对象ptr</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>混合写屏障满足了弱三色不变式；</p>
+<p>只需要在开始时并发扫描栈，使其上的对象一直保持黑色</p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>v1.3及以前，整体需要stw，效率极低；</p>
+<p>v1.5 采用三色标记法，堆空间启动写屏障，栈空间不启动，全部扫描后还需要再扫描一次栈，效率一般；</p>
+<p>v1.8 三色标记法，混合写屏障机制，栈空间不启动，但栈上所有对象都被涂成黑色，无需stw，效率较高。</p>
+<p><img src="/2021/10/18/GoLang%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E8%BF%AD%E4%BB%A3%E5%88%86%E6%9E%90/8.png" alt="image-20211019202349207"></p>
+]]></content>
+      <categories>
+        <category>golang</category>
+        <category>知识点</category>
+      </categories>
+      <tags>
+        <tag>golang</tag>
+        <tag>垃圾回收，GC</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Golang web项目结构剖析</title>
     <url>/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/</url>
     <content><![CDATA[<h2 id="2021-6-10-晴"><a href="#2021-6-10-晴" class="headerlink" title="2021.6.10 晴"></a>2021.6.10 晴</h2><p>最近在做项目的时候，发现自己原来划分的结构非常粗糙，代码分层非常不清晰，因此花时间重构了一下，这里将重构前后的结构和代码进行对比。</p>
