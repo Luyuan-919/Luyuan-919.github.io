@@ -89,113 +89,10 @@
       </tags>
   </entry>
   <entry>
-    <title>Golang web项目结构剖析</title>
-    <url>/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="2021-6-10-晴"><a href="#2021-6-10-晴" class="headerlink" title="2021.6.10 晴"></a>2021.6.10 晴</h2><p>最近在做项目的时候，发现自己原来划分的结构非常粗糙，代码分层非常不清晰，因此花时间重构了一下，这里将重构前后的结构和代码进行对比。</p>
-<span id="more"></span>
-
-<h2 id="原来的结构"><a href="#原来的结构" class="headerlink" title="原来的结构"></a>原来的结构</h2><p><img src="/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/1.png" alt="原来的结构"></p>
-<h3 id="结构问题"><a href="#结构问题" class="headerlink" title="结构问题"></a>结构问题</h3><p>先来说说结构上的问题。</p>
-<p>如图：</p>
-<p>第一个包 common  放的是第三方包和全局变量。</p>
-<p>例如一些const、email和log。</p>
-<p>第二个包config放的是对配置文件的读取和初始化。</p>
-<p>db是数据库的连接，初始化数据库引擎。</p>
-<p>而这里很蠢的是直接把数据库连接的信息写进了代码里，而正确的做法应该是把必要的信息写进配置文件中。</p>
-<p>docs包是接口文档存放的地方。</p>
-<p>log包里维护了一个log文件，存放着程序运行过程中产生的问题。</p>
-<p>upload是存放着用户上传的文件(例如头像之类的)，这里设计及其愚蠢的地方是我把用户的上传的文件放在了项目里面，这会增加项目的体积，还会带来额外的网络开销。</p>
-<p>而controller、model、service就是我们的老熟人了。</p>
-<p>controller是路由的处理逻辑，而model层是与数据库打交道，service是在这两层中间的联系人。</p>
-<p>这样的分层结构非常愚蠢且粗糙，在发现这一点后，我毫不犹豫的决定抛弃它，进行重构。</p>
-<h3 id="代码问题"><a href="#代码问题" class="headerlink" title="代码问题"></a>代码问题</h3><p>在这样糟糕的结构下，我写代码的时候，对于代码应该写在哪一层还是浑浑噩噩，因此这个项目写的非常的不优雅。</p>
-<p>例如：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UploadImg</span><span class="params">(c *gin.Context)</span></span> &#123;</span><br><span class="line">   file,err := c.FormFile(<span class="string">&quot;Img&quot;</span>)</span><br><span class="line">   email := c.PostForm(<span class="string">&quot;email&quot;</span>)</span><br><span class="line">   url := service.CheckImgUrl(email)</span><br><span class="line">   <span class="keyword">if</span> url != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      _ = os.Remove(url)</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgGetWErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   size := file.Size</span><br><span class="line">   <span class="keyword">if</span> size &gt; <span class="keyword">int64</span>(ImgLimit) &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSizeLimited)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> file == <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code, ImgNil)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   fileExt := filepath.Ext(file.Filename)</span><br><span class="line">   <span class="keyword">if</span> fileExt != <span class="string">&quot;.jpg&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.png&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.jpeg&quot;</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgFormatErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   file.Filename = service.GetImgName() + fileExt</span><br><span class="line">   err = c.SaveUploadedFile(file,defImgUrl + file.Filename)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSaveErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> ok := service.SaveImgName(email, defImgUrl + file.Filename); !ok &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSaveErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   WriteJsonCode(c,Code,ImgSaveSuccess)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这是一个处理用户上传头像的路由。</p>
-<p>下面是这个路由调用到的service层的函数：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CheckImgUrl</span><span class="params">(email <span class="keyword">string</span>)</span> <span class="title">string</span></span> &#123;</span><br><span class="line">   <span class="keyword">return</span> model.CheckImgUrl(email)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetImgName</span><span class="params">()</span> <span class="title">string</span></span> &#123;</span><br><span class="line">	<span class="keyword">return</span> time.Now().Format(defDateAndTime) + krandom.CreateRandomNumber(<span class="number">4</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SaveImgName</span><span class="params">(email,url <span class="keyword">string</span>)</span> <span class="title">bool</span></span>  &#123;</span><br><span class="line">   <span class="keyword">return</span> model.SaveImgUrl(email,url)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到，我的controller层里的函数写的非常长，对文件的判断都放在了路由里，而在service里，只有短短的一行代码，去调用model层的函数。</p>
-<p>这种写法无疑是非常不合理的。</p>
-<p>controller里应当只从ctx里拿取数据，然后传给service，以及返回结果。</p>
-<p>如果不得不进行逻辑的处理，应该只保留最小限度的代码，已经错误处理。</p>
-<p>这个问题在重构之后得到了解决。</p>
-<h2 id="重构之后"><a href="#重构之后" class="headerlink" title="重构之后"></a>重构之后</h2><p><img src="/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/2.png" alt="重构之后的结构"></p>
-<h3 id="结构"><a href="#结构" class="headerlink" title="结构"></a>结构</h3><p>这是重构之后的项目结构。</p>
-<p>可以看到，划分了更多的包出来。</p>
-<ul>
-<li>configs：存放配置文件。</li>
-<li>docs：接口文档集合。</li>
-<li>global：全局变量。例如数据库引擎，log全局变量，发送邮件的client等。</li>
-<li>internal：内部模块。<ul>
-<li>dao：数据访问层（Database Access Object），所有与数据相关的操作都会在 dao 层进行，这里替代了原项目中的model层的作用。</li>
-<li>middleware： HTTP 中间件。</li>
-<li>model：模型层，用于存放 model 对象。将结构体放在这里。</li>
-<li>request：放请求入参的结构体，方便入参时的绑定。</li>
-<li>response：返回数据的类型。例如一个结构体中有一个字段为用户密码，而在返回时是不能够返回这个字段的数据的，因此要定义新的结构体去返回该返回的信息。</li>
-<li>routers：路由相关逻辑处理。<ul>
-<li>qpi<ul>
-<li>base：这里是路由的位置，因为项目里这个路由组为：api/base/*，因此这里是这样命名。</li>
-<li>router.go 路由文件</li>
-</ul>
-</li>
-</ul>
-</li>
-<li>service：项目核心业务逻辑。</li>
-</ul>
-</li>
-<li>log： log包里维护了一个log文件，存放着程序运行过程中产生的问题。</li>
-<li>pkg：项目相关的模块包。<ul>
-<li>app：存放着一一些公共组件。比如jwt的解析，响应信息的处理。</li>
-<li>convert： 这里定义了一些可能会用到的类型转换的组件</li>
-<li>email： email配置的读取已经emailClient的初始化</li>
-<li>errcode： 定义了一些常用错误码，当需要返回错误信息时，直接调用此包的方法即可。</li>
-<li>logger： log的初始化</li>
-<li>setting： 配置文件的读取，程序的初始化。</li>
-</ul>
-</li>
-</ul>
-<p>原来的用户上传的文件，放在了另外的文件夹，虽然不能避免网络的开销，但是避免了项目的体积变大。(阿里云的oss太坑了)</p>
-<p>将项目结构细化之后，代码应该放在哪里就清晰了很多。</p>
-<h3 id="代码"><a href="#代码" class="headerlink" title="代码"></a>代码</h3><p>再来重新看关于上传头像的路由以及逻辑处理。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(u *User)</span> <span class="title">UpLoadImg</span><span class="params">(c *gin.Context)</span></span> &#123;</span><br><span class="line">   file,Err := c.FormFile(<span class="string">&quot;Img&quot;</span>)</span><br><span class="line">   response := app.NewResponse(c)</span><br><span class="line">   <span class="keyword">var</span> email <span class="keyword">string</span></span><br><span class="line">   i,ok := c.Get(<span class="string">&quot;email&quot;</span>)</span><br><span class="line">   <span class="keyword">if</span> !ok &#123;</span><br><span class="line">      response.ToErrorResponse(errcode.InvalidParams)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   email = i.(<span class="keyword">string</span>)</span><br><span class="line">   <span class="keyword">if</span> Err != <span class="literal">nil</span> &#123;</span><br><span class="line">      response.ToErrorResponse(errcode.InvalidParams)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   err := services.UpLoadImg(c,file,email)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      response.ToErrorResponse(err)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   response.ToResponse(<span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>可以看到，除了获取参数以及错误处理和信息响应，再无多余的代码。</p>
-<p>而service：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UpLoadImg</span><span class="params">(c *gin.Context,file *multipart.FileHeader, email <span class="keyword">string</span>)</span> *<span class="title">errcode</span>.<span class="title">Error</span></span> &#123;</span><br><span class="line">   <span class="comment">//邮箱不存在就返回</span></span><br><span class="line">   <span class="keyword">if</span> ok := CheckEmail(email); ok &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.NotFound</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//检查文件是否可用</span></span><br><span class="line">   err := fileReady(file)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//检查之前是否上传过头像</span></span><br><span class="line">   url,err := dao.CheckImg(email)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   do := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">int</span>)</span><br><span class="line">   <span class="comment">//url不为空 说明上传过</span></span><br><span class="line">   <span class="keyword">if</span> url != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      <span class="comment">//删除原来的</span></span><br><span class="line">      <span class="comment">//这里开启一个协程去做 是因为当把新的头像更新后才能去删除 删除使用channel通知</span></span><br><span class="line">      <span class="comment">//就算没有删除成功 也更新成功了 数据库里存的是用户更新后的数据</span></span><br><span class="line">      <span class="comment">//没有删除成功 会在日志文件里写入警告</span></span><br><span class="line">      <span class="keyword">go</span> deleteAvatar(url,do)</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//改变文件名</span></span><br><span class="line">   file.Filename = getImgName() + filepath.Ext(file.Filename)</span><br><span class="line">   <span class="comment">//保存</span></span><br><span class="line">   e := c.SaveUploadedFile(file, defAvatarUrl+ file.Filename)</span><br><span class="line">   <span class="keyword">if</span> e != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.OsErr</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//数据库里保存</span></span><br><span class="line">   err = dao.SaveImgUrl(email, defAvatarUrl+ file.Filename)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//这里去通知删除旧文件</span></span><br><span class="line">   <span class="comment">//直接关闭do即可 协程中会读取0值</span></span><br><span class="line">   <span class="built_in">close</span>(do)</span><br><span class="line">   <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">//删除旧文件</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">deleteAvatar</span><span class="params">(url <span class="keyword">string</span>,do <span class="keyword">chan</span> <span class="keyword">int</span>)</span></span>  &#123;</span><br><span class="line">   <span class="keyword">select</span> &#123;</span><br><span class="line">   <span class="keyword">case</span> &lt;- do:</span><br><span class="line">      err := os.Remove(url)</span><br><span class="line">      <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">         global.Logger.Errorf(<span class="string">&quot;旧文件未及时删除!文件地址为：&quot;</span>,url)</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">fileReady</span><span class="params">(file *multipart.FileHeader)</span> *<span class="title">errcode</span>.<span class="title">Error</span></span> &#123;</span><br><span class="line">   <span class="comment">//判断文件是否超出限制大小</span></span><br><span class="line">   size := file.Size</span><br><span class="line">   <span class="keyword">if</span> size &gt; <span class="keyword">int64</span>(ImgLimit) &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileTooLarge</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//文件为空</span></span><br><span class="line">   <span class="keyword">if</span> file == <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileIsNil</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//判断文件类型</span></span><br><span class="line">   fileExt := filepath.Ext(file.Filename)</span><br><span class="line">   <span class="keyword">if</span> fileExt != <span class="string">&quot;.jpg&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.png&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.jpeg&quot;</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileFormatErr</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>将逻辑的处理全部放进service，并且对于可重用的部分做了抽离。</p>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>在对项目进行重构之后，项目的粒度变细，结构更清晰且易于编写代码。</p>
-<p>虽然重构很花时间，而且很费精力，但我觉得很值得。</p>
-<p>制定的规范、划分的结构，会帮助你的后期代码更好写。</p>
-<p>而优化结构也是一个程序员应该一直考虑的事情。</p>
-<p>该项目我已经开源：<a href="https://github.com/sta-golang/soft">sta-golang/soft (github.com)</a></p>
-<p>希望对你有所帮助。</p>
-]]></content>
-      <categories>
-        <category>golang</category>
-        <category>项目</category>
-      </categories>
-      <tags>
-        <tag>golang</tag>
-        <tag>web</tag>
-        <tag>项目</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Golang项目——纳新报名网站</title>
     <url>/2021/05/29/Golang%E9%A1%B9%E7%9B%AE%E2%80%94%E2%80%94%E7%BA%B3%E6%96%B0%E6%8A%A5%E5%90%8D%E7%BD%91%E7%AB%99/</url>
     <content><![CDATA[<p>离准备面试的时间只剩下半年左右的时间了，而身为菜鸟的我还没有做拿得出手的项目。</p>
-<p>于是开始考虑该做点什么东西才能忽悠(bushi)面试官。</p>
+<p>于是开始考虑该做点什么东西冲击offer。</p>
 <span id="more"></span>
 
 <p>想来想去，给实验室做个官网吧，当作自己的第一个项目。</p>
@@ -338,6 +235,193 @@
       </tags>
   </entry>
   <entry>
+    <title>Golang web项目结构剖析</title>
+    <url>/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="2021-6-10-晴"><a href="#2021-6-10-晴" class="headerlink" title="2021.6.10 晴"></a>2021.6.10 晴</h2><p>最近在做项目的时候，发现自己原来划分的结构非常粗糙，代码分层非常不清晰，因此花时间重构了一下，这里将重构前后的结构和代码进行对比。</p>
+<span id="more"></span>
+
+<h2 id="原来的结构"><a href="#原来的结构" class="headerlink" title="原来的结构"></a>原来的结构</h2><p><img src="/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/1.png" alt="原来的结构"></p>
+<h3 id="结构问题"><a href="#结构问题" class="headerlink" title="结构问题"></a>结构问题</h3><p>先来说说结构上的问题。</p>
+<p>如图：</p>
+<p>第一个包 common  放的是第三方包和全局变量。</p>
+<p>例如一些const、email和log。</p>
+<p>第二个包config放的是对配置文件的读取和初始化。</p>
+<p>db是数据库的连接，初始化数据库引擎。</p>
+<p>而这里很蠢的是直接把数据库连接的信息写进了代码里，而正确的做法应该是把必要的信息写进配置文件中。</p>
+<p>docs包是接口文档存放的地方。</p>
+<p>log包里维护了一个log文件，存放着程序运行过程中产生的问题。</p>
+<p>upload是存放着用户上传的文件(例如头像之类的)，这里设计及其愚蠢的地方是我把用户的上传的文件放在了项目里面，这会增加项目的体积，还会带来额外的网络开销。</p>
+<p>而controller、model、service就是我们的老熟人了。</p>
+<p>controller是路由的处理逻辑，而model层是与数据库打交道，service是在这两层中间的联系人。</p>
+<p>这样的分层结构非常愚蠢且粗糙，在发现这一点后，我毫不犹豫的决定抛弃它，进行重构。</p>
+<h3 id="代码问题"><a href="#代码问题" class="headerlink" title="代码问题"></a>代码问题</h3><p>在这样糟糕的结构下，我写代码的时候，对于代码应该写在哪一层还是浑浑噩噩，因此这个项目写的非常的不优雅。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UploadImg</span><span class="params">(c *gin.Context)</span></span> &#123;</span><br><span class="line">   file,err := c.FormFile(<span class="string">&quot;Img&quot;</span>)</span><br><span class="line">   email := c.PostForm(<span class="string">&quot;email&quot;</span>)</span><br><span class="line">   url := service.CheckImgUrl(email)</span><br><span class="line">   <span class="keyword">if</span> url != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      _ = os.Remove(url)</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgGetWErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   size := file.Size</span><br><span class="line">   <span class="keyword">if</span> size &gt; <span class="keyword">int64</span>(ImgLimit) &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSizeLimited)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> file == <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code, ImgNil)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   fileExt := filepath.Ext(file.Filename)</span><br><span class="line">   <span class="keyword">if</span> fileExt != <span class="string">&quot;.jpg&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.png&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.jpeg&quot;</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgFormatErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   file.Filename = service.GetImgName() + fileExt</span><br><span class="line">   err = c.SaveUploadedFile(file,defImgUrl + file.Filename)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSaveErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">if</span> ok := service.SaveImgName(email, defImgUrl + file.Filename); !ok &#123;</span><br><span class="line">      WriteJsonCode(c,Code,ImgSaveErr)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   WriteJsonCode(c,Code,ImgSaveSuccess)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这是一个处理用户上传头像的路由。</p>
+<p>下面是这个路由调用到的service层的函数：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CheckImgUrl</span><span class="params">(email <span class="keyword">string</span>)</span> <span class="title">string</span></span> &#123;</span><br><span class="line">   <span class="keyword">return</span> model.CheckImgUrl(email)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetImgName</span><span class="params">()</span> <span class="title">string</span></span> &#123;</span><br><span class="line">	<span class="keyword">return</span> time.Now().Format(defDateAndTime) + krandom.CreateRandomNumber(<span class="number">4</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SaveImgName</span><span class="params">(email,url <span class="keyword">string</span>)</span> <span class="title">bool</span></span>  &#123;</span><br><span class="line">   <span class="keyword">return</span> model.SaveImgUrl(email,url)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，我的controller层里的函数写的非常长，对文件的判断都放在了路由里，而在service里，只有短短的一行代码，去调用model层的函数。</p>
+<p>这种写法无疑是非常不合理的。</p>
+<p>controller里应当只从ctx里拿取数据，然后传给service，以及返回结果。</p>
+<p>如果不得不进行逻辑的处理，应该只保留最小限度的代码，已经错误处理。</p>
+<p>这个问题在重构之后得到了解决。</p>
+<h2 id="重构之后"><a href="#重构之后" class="headerlink" title="重构之后"></a>重构之后</h2><p><img src="/2021/06/09/Golang-web%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84%E5%89%96%E6%9E%90/2.png" alt="重构之后的结构"></p>
+<h3 id="结构"><a href="#结构" class="headerlink" title="结构"></a>结构</h3><p>这是重构之后的项目结构。</p>
+<p>可以看到，划分了更多的包出来。</p>
+<ul>
+<li>configs：存放配置文件。</li>
+<li>docs：接口文档集合。</li>
+<li>global：全局变量。例如数据库引擎，log全局变量，发送邮件的client等。</li>
+<li>internal：内部模块。<ul>
+<li>dao：数据访问层（Database Access Object），所有与数据相关的操作都会在 dao 层进行，这里替代了原项目中的model层的作用。</li>
+<li>middleware： HTTP 中间件。</li>
+<li>model：模型层，用于存放 model 对象。将结构体放在这里。</li>
+<li>request：放请求入参的结构体，方便入参时的绑定。</li>
+<li>response：返回数据的类型。例如一个结构体中有一个字段为用户密码，而在返回时是不能够返回这个字段的数据的，因此要定义新的结构体去返回该返回的信息。</li>
+<li>routers：路由相关逻辑处理。<ul>
+<li>qpi<ul>
+<li>base：这里是路由的位置，因为项目里这个路由组为：api/base/*，因此这里是这样命名。</li>
+<li>router.go 路由文件</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>service：项目核心业务逻辑。</li>
+</ul>
+</li>
+<li>log： log包里维护了一个log文件，存放着程序运行过程中产生的问题。</li>
+<li>pkg：项目相关的模块包。<ul>
+<li>app：存放着一一些公共组件。比如jwt的解析，响应信息的处理。</li>
+<li>convert： 这里定义了一些可能会用到的类型转换的组件</li>
+<li>email： email配置的读取已经emailClient的初始化</li>
+<li>errcode： 定义了一些常用错误码，当需要返回错误信息时，直接调用此包的方法即可。</li>
+<li>logger： log的初始化</li>
+<li>setting： 配置文件的读取，程序的初始化。</li>
+</ul>
+</li>
+</ul>
+<p>原来的用户上传的文件，放在了另外的文件夹，虽然不能避免网络的开销，但是避免了项目的体积变大。(阿里云的oss太坑了)</p>
+<p>将项目结构细化之后，代码应该放在哪里就清晰了很多。</p>
+<h3 id="代码"><a href="#代码" class="headerlink" title="代码"></a>代码</h3><p>再来重新看关于上传头像的路由以及逻辑处理。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(u *User)</span> <span class="title">UpLoadImg</span><span class="params">(c *gin.Context)</span></span> &#123;</span><br><span class="line">   file,Err := c.FormFile(<span class="string">&quot;Img&quot;</span>)</span><br><span class="line">   response := app.NewResponse(c)</span><br><span class="line">   <span class="keyword">var</span> email <span class="keyword">string</span></span><br><span class="line">   i,ok := c.Get(<span class="string">&quot;email&quot;</span>)</span><br><span class="line">   <span class="keyword">if</span> !ok &#123;</span><br><span class="line">      response.ToErrorResponse(errcode.InvalidParams)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   email = i.(<span class="keyword">string</span>)</span><br><span class="line">   <span class="keyword">if</span> Err != <span class="literal">nil</span> &#123;</span><br><span class="line">      response.ToErrorResponse(errcode.InvalidParams)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   err := services.UpLoadImg(c,file,email)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      response.ToErrorResponse(err)</span><br><span class="line">      <span class="keyword">return</span></span><br><span class="line">   &#125;</span><br><span class="line">   response.ToResponse(<span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，除了获取参数以及错误处理和信息响应，再无多余的代码。</p>
+<p>而service：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UpLoadImg</span><span class="params">(c *gin.Context,file *multipart.FileHeader, email <span class="keyword">string</span>)</span> *<span class="title">errcode</span>.<span class="title">Error</span></span> &#123;</span><br><span class="line">   <span class="comment">//邮箱不存在就返回</span></span><br><span class="line">   <span class="keyword">if</span> ok := CheckEmail(email); ok &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.NotFound</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//检查文件是否可用</span></span><br><span class="line">   err := fileReady(file)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//检查之前是否上传过头像</span></span><br><span class="line">   url,err := dao.CheckImg(email)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   do := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">int</span>)</span><br><span class="line">   <span class="comment">//url不为空 说明上传过</span></span><br><span class="line">   <span class="keyword">if</span> url != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">      <span class="comment">//删除原来的</span></span><br><span class="line">      <span class="comment">//这里开启一个协程去做 是因为当把新的头像更新后才能去删除 删除使用channel通知</span></span><br><span class="line">      <span class="comment">//就算没有删除成功 也更新成功了 数据库里存的是用户更新后的数据</span></span><br><span class="line">      <span class="comment">//没有删除成功 会在日志文件里写入警告</span></span><br><span class="line">      <span class="keyword">go</span> deleteAvatar(url,do)</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//改变文件名</span></span><br><span class="line">   file.Filename = getImgName() + filepath.Ext(file.Filename)</span><br><span class="line">   <span class="comment">//保存</span></span><br><span class="line">   e := c.SaveUploadedFile(file, defAvatarUrl+ file.Filename)</span><br><span class="line">   <span class="keyword">if</span> e != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.OsErr</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//数据库里保存</span></span><br><span class="line">   err = dao.SaveImgUrl(email, defAvatarUrl+ file.Filename)</span><br><span class="line">   <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> err</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//这里去通知删除旧文件</span></span><br><span class="line">   <span class="comment">//直接关闭do即可 协程中会读取0值</span></span><br><span class="line">   <span class="built_in">close</span>(do)</span><br><span class="line">   <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">//删除旧文件</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">deleteAvatar</span><span class="params">(url <span class="keyword">string</span>,do <span class="keyword">chan</span> <span class="keyword">int</span>)</span></span>  &#123;</span><br><span class="line">   <span class="keyword">select</span> &#123;</span><br><span class="line">   <span class="keyword">case</span> &lt;- do:</span><br><span class="line">      err := os.Remove(url)</span><br><span class="line">      <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">         global.Logger.Errorf(<span class="string">&quot;旧文件未及时删除!文件地址为：&quot;</span>,url)</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">fileReady</span><span class="params">(file *multipart.FileHeader)</span> *<span class="title">errcode</span>.<span class="title">Error</span></span> &#123;</span><br><span class="line">   <span class="comment">//判断文件是否超出限制大小</span></span><br><span class="line">   size := file.Size</span><br><span class="line">   <span class="keyword">if</span> size &gt; <span class="keyword">int64</span>(ImgLimit) &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileTooLarge</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//文件为空</span></span><br><span class="line">   <span class="keyword">if</span> file == <span class="literal">nil</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileIsNil</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="comment">//判断文件类型</span></span><br><span class="line">   fileExt := filepath.Ext(file.Filename)</span><br><span class="line">   <span class="keyword">if</span> fileExt != <span class="string">&quot;.jpg&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.png&quot;</span> &amp;&amp; fileExt != <span class="string">&quot;.jpeg&quot;</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> errcode.FileFormatErr</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>将逻辑的处理全部放进service，并且对于可重用的部分做了抽离。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>在对项目进行重构之后，项目的粒度变细，结构更清晰且易于编写代码。</p>
+<p>虽然重构很花时间，而且很费精力，但我觉得很值得。</p>
+<p>制定的规范、划分的结构，会帮助你的后期代码更好写。</p>
+<p>而优化结构也是一个程序员应该一直考虑的事情。</p>
+<p>该项目我已经开源：<a href="https://github.com/sta-golang/soft">sta-golang/soft (github.com)</a></p>
+<p>希望对你有所帮助。</p>
+]]></content>
+      <categories>
+        <category>golang</category>
+        <category>项目</category>
+      </categories>
+      <tags>
+        <tag>golang</tag>
+        <tag>web</tag>
+        <tag>项目</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>go语言heap源码赏析&amp;优先队列的使用</title>
+    <url>/2021/09/05/go%E8%AF%AD%E8%A8%80heap%E6%BA%90%E7%A0%81%E8%B5%8F%E6%9E%90-%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97%E7%9A%84%E4%BD%BF%E7%94%A8/</url>
+    <content><![CDATA[<p>在剑指offer的刷题过程中，学习到了堆的知识。<br>顺藤摸瓜，阅读了heap的源码，不得不说源码写的真是短小精悍。<br>这篇文章就来看看在go语言中heap的用法以及和heap的源码。</p>
+<span id="more"></span>
+
+<h1 id="前置知识"><a href="#前置知识" class="headerlink" title="前置知识"></a>前置知识</h1><h2 id="堆"><a href="#堆" class="headerlink" title="堆"></a>堆</h2><h3 id="概念"><a href="#概念" class="headerlink" title="概念"></a>概念</h3><p>如果有一个关键码的集合K = {k0，k1， k2，…，kn-1}，把它的所有元素按完全二叉树的顺序存储方式存储在一个一维数组中，并满足：Ki &lt;= K2i+1 且 Ki&lt;=K2i+2 ，则称为小堆(或大堆)。</p>
+<p>将根节点最大的堆叫做最大堆或大根堆，根节点最小的堆叫做最小堆或小根堆。</p>
+<h3 id="性质"><a href="#性质" class="headerlink" title="性质"></a>性质</h3><ol>
+<li><em><strong>堆中某个节点的值总是不大于或不小于其父节点的值;</strong></em></li>
+<li><em><strong>堆总是一棵完全二叉树。</strong></em></li>
+</ol>
+<p>一个很重要的点：</p>
+<p>在二叉树(堆是特殊的二叉树)中，如果父节点的下标为k，那么如果其子节点存在，则子节点的下标为2k + 1，2k + 2.</p>
+<p><img src="/2021/09/05/go%E8%AF%AD%E8%A8%80heap%E6%BA%90%E7%A0%81%E8%B5%8F%E6%9E%90-%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97%E7%9A%84%E4%BD%BF%E7%94%A8/1.png" alt="证明过程"></p>
+<h1 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h1><p>首先来看看这个包中的结构：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// The Interface type describes the requirements</span></span><br><span class="line"><span class="comment">// for a type using the routines in this package.</span></span><br><span class="line"><span class="comment">// Any type that implements it may be used as a</span></span><br><span class="line"><span class="comment">// min-heap with the following invariants (established after</span></span><br><span class="line"><span class="comment">// Init has been called or if the data is empty or sorted):</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">//	!h.Less(j, i) for 0 &lt;= i &lt; h.Len() and 2*i+1 &lt;= j &lt;= 2*i+2 and j &lt; h.Len()</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">// Note that Push and Pop in this interface are for package heap&#x27;s</span></span><br><span class="line"><span class="comment">// implementation to call. To add and remove things from the heap,</span></span><br><span class="line"><span class="keyword">type</span> Interface <span class="keyword">interface</span> &#123;</span><br><span class="line">	sort.Interface</span><br><span class="line">	Push(x <span class="keyword">interface</span>&#123;&#125;) <span class="comment">// add x as element Len()</span></span><br><span class="line">	Pop() <span class="keyword">interface</span>&#123;&#125;   <span class="comment">// remove and return element Len() - 1.</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>根据注释，我们可以知道，任何实现了Interface接口的struct，就可以被看作是一个堆。</p>
+<p>需要实现的接口有：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> IntHeap []<span class="keyword">int</span></span><br><span class="line"></span><br><span class="line"><span class="comment">//这三个方法实现了sort.Interface接口</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Len</span><span class="params">()</span> <span class="title">int</span></span>           &#123; <span class="keyword">return</span> <span class="built_in">len</span>(h) &#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Less</span><span class="params">(i, j <span class="keyword">int</span>)</span> <span class="title">bool</span></span> &#123; <span class="keyword">return</span> h[i] &lt; h[j] &#125;  <span class="comment">//这里的运算符决定了排序方式，即最大堆或最小堆 </span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Swap</span><span class="params">(i, j <span class="keyword">int</span>)</span></span>      &#123; h[i], h[j] = h[j], h[i] &#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *IntHeap)</span> <span class="title">Push</span><span class="params">(x <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	*h = <span class="built_in">append</span>(*h, x.(<span class="keyword">int</span>))</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *IntHeap)</span> <span class="title">Pop</span><span class="params">()</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">	old := *h</span><br><span class="line">	n := <span class="built_in">len</span>(old)</span><br><span class="line">	x := old[n<span class="number">-1</span>]</span><br><span class="line">	*h = old[<span class="number">0</span> : n<span class="number">-1</span>]</span><br><span class="line">	<span class="keyword">return</span> x</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>我们通过heap.Init()就可以初始化一个最小堆了。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">minHeap := &amp;IntHeap&#123;<span class="number">9</span>,<span class="number">7</span>,<span class="number">6</span>,<span class="number">5</span>,<span class="number">4</span>,<span class="number">3</span>,<span class="number">2</span>,<span class="number">1</span>&#125;</span><br><span class="line">heap.Init(minHeap)</span><br><span class="line">fmt.Println(minHeap)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">$ go run main.go</span><br><span class="line">&amp;[1 4 2 5 9 3 6 7]</span><br></pre></td></tr></table></figure>
+
+<p>常用方法：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">minHeap := &amp;IntHeap&#123;<span class="number">9</span>,<span class="number">7</span>,<span class="number">6</span>,<span class="number">5</span>,<span class="number">4</span>,<span class="number">3</span>,<span class="number">2</span>,<span class="number">1</span>&#125;</span><br><span class="line">heap.Init(minHeap)</span><br><span class="line">heap.Push(minHeap,<span class="number">20</span>)</span><br><span class="line">heap.Pop(minHeap)</span><br><span class="line">heap.Remove(minHeap,<span class="number">2</span>)</span><br><span class="line">heap.Fix(minHeap,<span class="number">0</span>)</span><br><span class="line">fmt.Println(minHeap)</span><br></pre></td></tr></table></figure>
+
+<h1 id="源码赏析"><a href="#源码赏析" class="headerlink" title="源码赏析"></a>源码赏析</h1><p>说完了堆的用法，我们来看看包里是怎么实现的。</p>
+<p>我们以最大堆为例。</p>
+<h2 id="Init"><a href="#Init" class="headerlink" title="Init()"></a>Init()</h2><p>我们从heap.Init()看起。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Init</span><span class="params">(h Interface)</span></span> &#123;</span><br><span class="line">   <span class="comment">// heapify</span></span><br><span class="line">   n := h.Len()</span><br><span class="line">   <span class="keyword">for</span> i := n/<span class="number">2</span> - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">      down(h, i, n)</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>非常简单，里面只调用了一个down()方法。至于i为什么从n/ 2 - 1到0，我们看完down函数再来解释。</p>
+<p>在这个函数中，传进来的参数有三个，分别是接口Interface，父节点下标，Interface长度。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">down</span><span class="params">(h Interface, i0, n <span class="keyword">int</span>)</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="comment">//创建父节点的副本</span></span><br><span class="line">	i := i0</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="comment">//左子节点</span></span><br><span class="line">		j1 := <span class="number">2</span>*i + <span class="number">1</span></span><br><span class="line">		<span class="comment">//如果左子节点超出范围，则跳出循环</span></span><br><span class="line">		<span class="keyword">if</span> j1 &gt;= n || j1 &lt; <span class="number">0</span> &#123; <span class="comment">// j1 &lt; 0 after int overflow</span></span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		j := j1 <span class="comment">// left child</span></span><br><span class="line">		<span class="comment">//将左子节点和右子节点的值进行比较，取较大的一方赋值给j</span></span><br><span class="line">		<span class="keyword">if</span> j2 := j1 + <span class="number">1</span>; j2 &lt; n &amp;&amp; h.Less(j2, j1) &#123;</span><br><span class="line">			j = j2 <span class="comment">// = 2*i + 2  // right child</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//此时的i是父节点，j是子节点中值较大的</span></span><br><span class="line">		<span class="keyword">if</span> !h.Less(j, i) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//如果父节点值小于该子节点，则交换</span></span><br><span class="line">		<span class="comment">//交换后，此时的父节点的值就是三个节点中最大的</span></span><br><span class="line">		h.Swap(i, j)</span><br><span class="line">		<span class="comment">//更新i 这是刚才的父节点现在的位置</span></span><br><span class="line">		i = j</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> i &gt; i0</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>通过这个函数，可以实现将传进来的父节点向下寻找到其该处于的位置。</p>
+<p>简而言之，就是让父节点、左右节点三个节点中值最大的处于父节点的位置，在不断的交换过程中，找到一个位置，使得我们传进来的父节点处于一个合适的位置(大于其两个子节点)。</p>
+<p>再来看看刚才Init函数里的下标范围：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">for</span> i := n/<span class="number">2</span> - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">     down(h, i, n)</span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
+
+<p>不难理解，从堆的中间位置往上，把每一个元素摆到其正确的位置，最后得到的结果就是一个正确的堆。</p>
+<h2 id="Push"><a href="#Push" class="headerlink" title="Push()"></a>Push()</h2><p>再来看看heap.Push()函数。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Push pushes the element x onto the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Push</span><span class="params">(h Interface, x <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	h.Push(x)</span><br><span class="line">	up(h, h.Len()<span class="number">-1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>非常简单，调用h自己实现的Push，然后对push后的Interface进行整理。</p>
+<p>与刚才的down相反的是，down是把元素从上往下沉淀，而up是把元素从下往上浮起。</p>
+<p>为什么这里要使用down呢？因为这里实际上是对Inerface append了一个元素，而这个元素处于Interface的末尾，也只有这个元素是无序的，因此摆正它的位置即可。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">up</span><span class="params">(h Interface, j <span class="keyword">int</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="comment">//父节点的位置</span></span><br><span class="line">		i := (j - <span class="number">1</span>) / <span class="number">2</span></span><br><span class="line">		<span class="comment">//与父节点进行比较 </span></span><br><span class="line">		<span class="keyword">if</span> i == j || !h.Less(j, i) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//不满足条件，交换</span></span><br><span class="line">		h.Swap(i, j)</span><br><span class="line">		<span class="comment">//更新j 此时的j成为父节点，进入下一次循环，将j与它的父节点进行比较，直到j找到其应该处于的位置</span></span><br><span class="line">		j = i</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="Pop"><a href="#Pop" class="headerlink" title="Pop()"></a>Pop()</h2><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Pop removes and returns the minimum element (according to Less) from the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="comment">// Pop is equivalent to Remove(h, 0).</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Pop</span><span class="params">(h Interface)</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">   n := h.Len() - <span class="number">1</span></span><br><span class="line">   h.Swap(<span class="number">0</span>, n)</span><br><span class="line">   down(h, <span class="number">0</span>, n)</span><br><span class="line">   <span class="keyword">return</span> h.Pop()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>首先将头部元素和末尾元素进行交换，此时的头部元素是无序的，因此直接down(h, 0, n)，让此元素找到合适的位置即可，最后调用h的pop，将末尾元素弹出。</p>
+<p>这里会想到一个问题，交换后的头部元素在找其位置时，按理说应该又会找回到了末尾元素，那么头部元素又会被交换至末尾元素了，那就达不到弹出原头部元素的目的了。</p>
+<p>不用担心，在down中：</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">if</span> j1 &gt;= n || j1 &lt; <span class="number">0</span> &#123; <span class="comment">// j1 &lt; 0 after int overflow</span></span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> j2 := j1 + <span class="number">1</span>; j2 &lt; n &amp;&amp; h.Less(j2, j1) &#123;</span><br><span class="line">			j = j2 <span class="comment">// = 2*i + 2  // right child</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意这两处，代码保证了向下寻找的时候不会与末尾元素进行比较，这也是down中需要传一个n的原因。</p>
+<h2 id="Remove"><a href="#Remove" class="headerlink" title="Remove()"></a>Remove()</h2><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Remove removes and returns the element at index i from the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Remove</span><span class="params">(h Interface, i <span class="keyword">int</span>)</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">   n := h.Len() - <span class="number">1</span></span><br><span class="line">   <span class="keyword">if</span> n != i &#123;</span><br><span class="line">      h.Swap(i, n)</span><br><span class="line">      <span class="keyword">if</span> !down(h, i, n) &#123;</span><br><span class="line">         up(h, i)</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> h.Pop()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意，这里的参数i不是元素i，而是下标i，remove掉的是i下标处的元素。</p>
+<p>与pop()思路大致一致，先将该下标的元素与末尾元素进行交换，然后摆正交换后的该元素的位置。</p>
+<p>注意的点是，在push或pop中，都是从末尾开始向上找位置，而在remove中是从中间位置开始找，因此向下找一次，如果元素没有向下移动，则向上再寻找，down中最后一句return就是为此做准备的。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">return</span> i &gt; i0 <span class="comment">//父节点的副本是否大于原来父节点的位置，即发生了向下移动</span></span><br></pre></td></tr></table></figure>
+
+<p>Fix()</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Fix re-establishes the heap ordering after the element at index i has changed its value.</span></span><br><span class="line"><span class="comment">// Changing the value of the element at index i and then calling Fix is equivalent to,</span></span><br><span class="line"><span class="comment">// but less expensive than, calling Remove(h, i) followed by a Push of the new value.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Fix</span><span class="params">(h Interface, i <span class="keyword">int</span>)</span></span> &#123;</span><br><span class="line">   <span class="keyword">if</span> !down(h, i, h.Len()) &#123;</span><br><span class="line">      up(h, i)</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Fix与remove思路一致，因为无法保证i的位置，因此先向下寻找，再向上寻找。</p>
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>以上就是heap包源码的内容了，阅读完之后，深感佩服，真是写的简明精致。</p>
+<p>码路漫漫其修远兮，还需继续求索。</p>
+]]></content>
+      <categories>
+        <category>golang</category>
+        <category>源码赏析</category>
+      </categories>
+      <tags>
+        <tag>golang</tag>
+        <tag>源码，数据结构</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>go语言context超时控制的用法</title>
     <url>/2021/05/30/go%E8%AF%AD%E8%A8%80context%E8%B6%85%E6%97%B6%E6%8E%A7%E5%88%B6%E7%9A%84%E7%94%A8%E6%B3%95/</url>
     <content><![CDATA[<p>这篇博客来说一说go语言中的context的用法。</p>
@@ -430,90 +514,6 @@
       <tags>
         <tag>golang</tag>
         <tag>context</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>go语言heap源码赏析&amp;优先队列的使用</title>
-    <url>/2021/09/05/go%E8%AF%AD%E8%A8%80heap%E6%BA%90%E7%A0%81%E8%B5%8F%E6%9E%90-%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97%E7%9A%84%E4%BD%BF%E7%94%A8/</url>
-    <content><![CDATA[<p>在剑指offer的刷题过程中，学习到了堆的知识。<br>顺藤摸瓜，阅读了heap的源码，不得不说源码写的真是短小精悍。<br>这篇文章就来看看在go语言中heap的用法以及和heap的源码。</p>
-<span id="more"></span>
-
-<h1 id="前置知识"><a href="#前置知识" class="headerlink" title="前置知识"></a>前置知识</h1><h2 id="堆"><a href="#堆" class="headerlink" title="堆"></a>堆</h2><h3 id="概念"><a href="#概念" class="headerlink" title="概念"></a>概念</h3><p>如果有一个关键码的集合K = {k0，k1， k2，…，kn-1}，把它的所有元素按完全二叉树的顺序存储方式存储在一个一维数组中，并满足：Ki &lt;= K2i+1 且 Ki&lt;=K2i+2 ，则称为小堆(或大堆)。</p>
-<p>将根节点最大的堆叫做最大堆或大根堆，根节点最小的堆叫做最小堆或小根堆。</p>
-<h3 id="性质"><a href="#性质" class="headerlink" title="性质"></a>性质</h3><ol>
-<li><em><strong>堆中某个节点的值总是不大于或不小于其父节点的值;</strong></em></li>
-<li><em><strong>堆总是一棵完全二叉树。</strong></em></li>
-</ol>
-<p>一个很重要的点：</p>
-<p>在二叉树(堆是特殊的二叉树)中，如果父节点的下标为k，那么如果其子节点存在，则子节点的下标为2k + 1，2k + 2.</p>
-<p><img src="/2021/09/05/go%E8%AF%AD%E8%A8%80heap%E6%BA%90%E7%A0%81%E8%B5%8F%E6%9E%90-%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97%E7%9A%84%E4%BD%BF%E7%94%A8/1.png" alt="证明过程"></p>
-<h1 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h1><p>首先来看看这个包中的结构：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// The Interface type describes the requirements</span></span><br><span class="line"><span class="comment">// for a type using the routines in this package.</span></span><br><span class="line"><span class="comment">// Any type that implements it may be used as a</span></span><br><span class="line"><span class="comment">// min-heap with the following invariants (established after</span></span><br><span class="line"><span class="comment">// Init has been called or if the data is empty or sorted):</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">//	!h.Less(j, i) for 0 &lt;= i &lt; h.Len() and 2*i+1 &lt;= j &lt;= 2*i+2 and j &lt; h.Len()</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">// Note that Push and Pop in this interface are for package heap&#x27;s</span></span><br><span class="line"><span class="comment">// implementation to call. To add and remove things from the heap,</span></span><br><span class="line"><span class="keyword">type</span> Interface <span class="keyword">interface</span> &#123;</span><br><span class="line">	sort.Interface</span><br><span class="line">	Push(x <span class="keyword">interface</span>&#123;&#125;) <span class="comment">// add x as element Len()</span></span><br><span class="line">	Pop() <span class="keyword">interface</span>&#123;&#125;   <span class="comment">// remove and return element Len() - 1.</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>根据注释，我们可以知道，任何实现了Interface接口的struct，就可以被看作是一个堆。</p>
-<p>需要实现的接口有：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> IntHeap []<span class="keyword">int</span></span><br><span class="line"></span><br><span class="line"><span class="comment">//这三个方法实现了sort.Interface接口</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Len</span><span class="params">()</span> <span class="title">int</span></span>           &#123; <span class="keyword">return</span> <span class="built_in">len</span>(h) &#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Less</span><span class="params">(i, j <span class="keyword">int</span>)</span> <span class="title">bool</span></span> &#123; <span class="keyword">return</span> h[i] &lt; h[j] &#125;  <span class="comment">//这里的运算符决定了排序方式，即最大堆或最小堆 </span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h IntHeap)</span> <span class="title">Swap</span><span class="params">(i, j <span class="keyword">int</span>)</span></span>      &#123; h[i], h[j] = h[j], h[i] &#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *IntHeap)</span> <span class="title">Push</span><span class="params">(x <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	*h = <span class="built_in">append</span>(*h, x.(<span class="keyword">int</span>))</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *IntHeap)</span> <span class="title">Pop</span><span class="params">()</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">	old := *h</span><br><span class="line">	n := <span class="built_in">len</span>(old)</span><br><span class="line">	x := old[n<span class="number">-1</span>]</span><br><span class="line">	*h = old[<span class="number">0</span> : n<span class="number">-1</span>]</span><br><span class="line">	<span class="keyword">return</span> x</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>我们通过heap.Init()就可以初始化一个最小堆了。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">minHeap := &amp;IntHeap&#123;<span class="number">9</span>,<span class="number">7</span>,<span class="number">6</span>,<span class="number">5</span>,<span class="number">4</span>,<span class="number">3</span>,<span class="number">2</span>,<span class="number">1</span>&#125;</span><br><span class="line">heap.Init(minHeap)</span><br><span class="line">fmt.Println(minHeap)</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">$ go run main.go</span><br><span class="line">&amp;[1 4 2 5 9 3 6 7]</span><br></pre></td></tr></table></figure>
-
-<p>常用方法：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line">minHeap := &amp;IntHeap&#123;<span class="number">9</span>,<span class="number">7</span>,<span class="number">6</span>,<span class="number">5</span>,<span class="number">4</span>,<span class="number">3</span>,<span class="number">2</span>,<span class="number">1</span>&#125;</span><br><span class="line">heap.Init(minHeap)</span><br><span class="line">heap.Push(minHeap,<span class="number">20</span>)</span><br><span class="line">heap.Pop(minHeap)</span><br><span class="line">heap.Remove(minHeap,<span class="number">2</span>)</span><br><span class="line">heap.Fix(minHeap,<span class="number">0</span>)</span><br><span class="line">fmt.Println(minHeap)</span><br></pre></td></tr></table></figure>
-
-<h1 id="源码赏析"><a href="#源码赏析" class="headerlink" title="源码赏析"></a>源码赏析</h1><p>说完了堆的用法，我们来看看包里是怎么实现的。</p>
-<p>我们以最大堆为例。</p>
-<h2 id="Init"><a href="#Init" class="headerlink" title="Init()"></a>Init()</h2><p>我们从heap.Init()看起。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Init</span><span class="params">(h Interface)</span></span> &#123;</span><br><span class="line">   <span class="comment">// heapify</span></span><br><span class="line">   n := h.Len()</span><br><span class="line">   <span class="keyword">for</span> i := n/<span class="number">2</span> - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">      down(h, i, n)</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>非常简单，里面只调用了一个down()方法。至于i为什么从n/ 2 - 1到0，我们看完down函数再来解释。</p>
-<p>在这个函数中，传进来的参数有三个，分别是接口Interface，父节点下标，Interface长度。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">down</span><span class="params">(h Interface, i0, n <span class="keyword">int</span>)</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="comment">//创建父节点的副本</span></span><br><span class="line">	i := i0</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="comment">//左子节点</span></span><br><span class="line">		j1 := <span class="number">2</span>*i + <span class="number">1</span></span><br><span class="line">		<span class="comment">//如果左子节点超出范围，则跳出循环</span></span><br><span class="line">		<span class="keyword">if</span> j1 &gt;= n || j1 &lt; <span class="number">0</span> &#123; <span class="comment">// j1 &lt; 0 after int overflow</span></span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		j := j1 <span class="comment">// left child</span></span><br><span class="line">		<span class="comment">//将左子节点和右子节点的值进行比较，取较大的一方赋值给j</span></span><br><span class="line">		<span class="keyword">if</span> j2 := j1 + <span class="number">1</span>; j2 &lt; n &amp;&amp; h.Less(j2, j1) &#123;</span><br><span class="line">			j = j2 <span class="comment">// = 2*i + 2  // right child</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//此时的i是父节点，j是子节点中值较大的</span></span><br><span class="line">		<span class="keyword">if</span> !h.Less(j, i) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//如果父节点值小于该子节点，则交换</span></span><br><span class="line">		<span class="comment">//交换后，此时的父节点的值就是三个节点中最大的</span></span><br><span class="line">		h.Swap(i, j)</span><br><span class="line">		<span class="comment">//更新i 这是刚才的父节点现在的位置</span></span><br><span class="line">		i = j</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> i &gt; i0</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>通过这个函数，可以实现将传进来的父节点向下寻找到其该处于的位置。</p>
-<p>简而言之，就是让父节点、左右节点三个节点中值最大的处于父节点的位置，在不断的交换过程中，找到一个位置，使得我们传进来的父节点处于一个合适的位置(大于其两个子节点)。</p>
-<p>再来看看刚才Init函数里的下标范围：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">for</span> i := n/<span class="number">2</span> - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">     down(h, i, n)</span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
-
-<p>不难理解，从堆的中间位置往上，把每一个元素摆到其正确的位置，最后得到的结果就是一个正确的堆。</p>
-<h2 id="Push"><a href="#Push" class="headerlink" title="Push()"></a>Push()</h2><p>再来看看heap.Push()函数。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Push pushes the element x onto the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Push</span><span class="params">(h Interface, x <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	h.Push(x)</span><br><span class="line">	up(h, h.Len()<span class="number">-1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>非常简单，调用h自己实现的Push，然后对push后的Interface进行整理。</p>
-<p>与刚才的down相反的是，down是把元素从上往下沉淀，而up是把元素从下往上浮起。</p>
-<p>为什么这里要使用down呢？因为这里实际上是对Inerface append了一个元素，而这个元素处于Interface的末尾，也只有这个元素是无序的，因此摆正它的位置即可。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">up</span><span class="params">(h Interface, j <span class="keyword">int</span>)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="comment">//父节点的位置</span></span><br><span class="line">		i := (j - <span class="number">1</span>) / <span class="number">2</span></span><br><span class="line">		<span class="comment">//与父节点进行比较 </span></span><br><span class="line">		<span class="keyword">if</span> i == j || !h.Less(j, i) &#123;</span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">//不满足条件，交换</span></span><br><span class="line">		h.Swap(i, j)</span><br><span class="line">		<span class="comment">//更新j 此时的j成为父节点，进入下一次循环，将j与它的父节点进行比较，直到j找到其应该处于的位置</span></span><br><span class="line">		j = i</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="Pop"><a href="#Pop" class="headerlink" title="Pop()"></a>Pop()</h2><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Pop removes and returns the minimum element (according to Less) from the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="comment">// Pop is equivalent to Remove(h, 0).</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Pop</span><span class="params">(h Interface)</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">   n := h.Len() - <span class="number">1</span></span><br><span class="line">   h.Swap(<span class="number">0</span>, n)</span><br><span class="line">   down(h, <span class="number">0</span>, n)</span><br><span class="line">   <span class="keyword">return</span> h.Pop()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>首先将头部元素和末尾元素进行交换，此时的头部元素是无序的，因此直接down(h, 0, n)，让此元素找到合适的位置即可，最后调用h的pop，将末尾元素弹出。</p>
-<p>这里会想到一个问题，交换后的头部元素在找其位置时，按理说应该又会找回到了末尾元素，那么头部元素又会被交换至末尾元素了，那就达不到弹出原头部元素的目的了。</p>
-<p>不用担心，在down中：</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">if</span> j1 &gt;= n || j1 &lt; <span class="number">0</span> &#123; <span class="comment">// j1 &lt; 0 after int overflow</span></span><br><span class="line">			<span class="keyword">break</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> j2 := j1 + <span class="number">1</span>; j2 &lt; n &amp;&amp; h.Less(j2, j1) &#123;</span><br><span class="line">			j = j2 <span class="comment">// = 2*i + 2  // right child</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>注意这两处，代码保证了向下寻找的时候不会与末尾元素进行比较，这也是down中需要传一个n的原因。</p>
-<h2 id="Remove"><a href="#Remove" class="headerlink" title="Remove()"></a>Remove()</h2><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Remove removes and returns the element at index i from the heap.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Remove</span><span class="params">(h Interface, i <span class="keyword">int</span>)</span> <span class="title">interface</span></span>&#123;&#125; &#123;</span><br><span class="line">   n := h.Len() - <span class="number">1</span></span><br><span class="line">   <span class="keyword">if</span> n != i &#123;</span><br><span class="line">      h.Swap(i, n)</span><br><span class="line">      <span class="keyword">if</span> !down(h, i, n) &#123;</span><br><span class="line">         up(h, i)</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> h.Pop()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>注意，这里的参数i不是元素i，而是下标i，remove掉的是i下标处的元素。</p>
-<p>与pop()思路大致一致，先将该下标的元素与末尾元素进行交换，然后摆正交换后的该元素的位置。</p>
-<p>注意的点是，在push或pop中，都是从末尾开始向上找位置，而在remove中是从中间位置开始找，因此向下找一次，如果元素没有向下移动，则向上再寻找，down中最后一句return就是为此做准备的。</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">return</span> i &gt; i0 <span class="comment">//父节点的副本是否大于原来父节点的位置，即发生了向下移动</span></span><br></pre></td></tr></table></figure>
-
-<p>Fix()</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Fix re-establishes the heap ordering after the element at index i has changed its value.</span></span><br><span class="line"><span class="comment">// Changing the value of the element at index i and then calling Fix is equivalent to,</span></span><br><span class="line"><span class="comment">// but less expensive than, calling Remove(h, i) followed by a Push of the new value.</span></span><br><span class="line"><span class="comment">// The complexity is O(log n) where n = h.Len().</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Fix</span><span class="params">(h Interface, i <span class="keyword">int</span>)</span></span> &#123;</span><br><span class="line">   <span class="keyword">if</span> !down(h, i, h.Len()) &#123;</span><br><span class="line">      up(h, i)</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>Fix与remove思路一致，因为无法保证i的位置，因此先向下寻找，再向上寻找。</p>
-<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>以上就是heap包源码的内容了，阅读完之后，深感佩服，真是写的简明精致。</p>
-<p>码路漫漫其修远兮，还需继续求索。</p>
-]]></content>
-      <categories>
-        <category>golang</category>
-        <category>源码赏析</category>
-      </categories>
-      <tags>
-        <tag>golang</tag>
-        <tag>源码，数据结构</tag>
       </tags>
   </entry>
   <entry>
